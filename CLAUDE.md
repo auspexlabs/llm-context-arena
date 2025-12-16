@@ -1,20 +1,21 @@
-# CLAUDE.md - Technical Notes for LLM Council
+# CLAUDE.md - Technical Notes for LLM Context Arena
 
 This file contains technical details, architectural decisions, and important implementation notes for future development sessions.
 
 ## Project Overview
 
-LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively answer user questions. The key innovation is anonymized peer review in Stage 2, preventing models from playing favorites.
+LLM Context Arena is a multi-mode deliberation system where multiple LLMs collaboratively answer user questions. The system supports various orchestration modes including Council (with anonymized peer review), Fight, Stacks, Round Robin, and Complex modes.
 
 ## Architecture
 
 ### Backend Structure (`backend/`)
 
 **`config.py`**
-- Contains `COUNCIL_MODELS` (list of OpenRouter model identifiers)
+- Contains `ARENA_MODELS` (list of OpenRouter model identifiers)
 - Contains `CHAIRMAN_MODEL` (model that synthesizes final answer)
 - Uses environment variable `OPENROUTER_API_KEY` from `.env`
 - Backend runs on **port 8001** (NOT 8000 - user had another app on 8000)
+- Context budgeting settings: `MODEL_CONTEXT_LIMITS`, `CONTEXT_SAFETY_MARGIN`, `OUTPUT_TOKEN_ALLOWANCE`
 
 **`openrouter.py`**
 - `query_model()`: Single async model query
@@ -22,17 +23,17 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 - Returns dict with 'content' and optional 'reasoning_details'
 - Graceful degradation: returns None on failure, continues with successful responses
 
-**`council.py`** - The Core Logic
-- `stage1_collect_responses()`: Parallel queries to all council models
-- `stage2_collect_rankings()`:
-  - Anonymizes responses as "Response A, B, C, etc."
-  - Creates `label_to_model` mapping for de-anonymization
-  - Prompts models to evaluate and rank (with strict format requirements)
-  - Returns tuple: (rankings_list, label_to_model_dict)
-  - Each ranking includes both raw text and `parsed_ranking` list
-- `stage3_synthesize_final()`: Chairman synthesizes from all responses + rankings
-- `parse_ranking_from_text()`: Extracts "FINAL RANKING:" section, handles both numbered lists and plain format
-- `calculate_aggregate_rankings()`: Computes average rank position across all peer evaluations
+**`arena.py`** - The Core Logic
+- `MODE_RUNNERS` registry mapping mode names to runner functions
+- `run_full_arena()`: Main entry point dispatching to mode-specific runners
+- `run_mode_council()`: Council mode (formerly baseline) - answers → rankings → chairman synthesis
+- `run_mode_round_robin()`: Round-robin drafting mode
+- `run_mode_fight()`: Adversarial critique/defense mode
+- `run_mode_stacks()`: Pair-merge-judge mode
+- `run_mode_complex_iterative()`: Extract/expand iterative mode
+- `run_mode_complex_questioning()`: Self-questioning mode
+- `parse_ranking_from_text()`: Extracts "FINAL RANKING:" section for council mode
+- `calculate_aggregate_rankings()`: Computes average rank position across peer evaluations
 
 **`storage.py`**
 - JSON-based conversation storage in `data/conversations/`
@@ -43,19 +44,36 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 **`main.py`**
 - FastAPI app with CORS enabled for localhost:5173 and localhost:3000
 - POST `/api/conversations/{id}/message` returns metadata in addition to stages
-- Metadata includes: label_to_model mapping and aggregate_rankings
+- Streaming endpoint with SSE for progress callbacks
+- Settings API at `/api/settings` for runtime configuration
+- Directive parsing and context budgeting logic
+
+**`rag_lmstudio.py`**
+- RAG pipeline with FAISS vector store
+- LM Studio integration for embeddings and reranking
+- Git-based repository indexing
+- Two-stage retrieval: FAISS → reranker
 
 ### Frontend Structure (`frontend/src/`)
 
 **`App.jsx`**
 - Main orchestration: manages conversations list and current conversation
 - Handles message sending and metadata storage
+- Theme and repo root state management
 - Important: metadata is stored in the UI state for display but not persisted to backend JSON
 
 **`components/ChatInterface.jsx`**
 - Multiline textarea (3 rows, resizable)
 - Enter to send, Shift+Enter for new line
-- User messages wrapped in markdown-content class for padding
+- Repo dropzone for ZIP uploads
+- Manual context picker with file tree
+- Mode progress bar and breadcrumbs
+- Mode timeline visualization
+
+**`components/Sidebar.jsx`**
+- Conversation list with mode badges
+- Mode selector dropdown for new conversations
+- Settings panel for arena models and chairman configuration
 
 **`components/Stage1.jsx`**
 - Tab view of individual model responses
@@ -66,21 +84,43 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 - De-anonymization happens CLIENT-SIDE for display (models receive anonymous labels)
 - Shows "Extracted Ranking" below each evaluation so users can validate parsing
 - Aggregate rankings shown with average position and vote count
-- Explanatory text clarifies that boldface model names are for readability only
 
 **`components/Stage3.jsx`**
 - Final synthesized answer from chairman
 - Green-tinted background (#f0fff0) to highlight conclusion
 
 **Styling (`*.css`)**
-- Light mode theme (not dark mode)
+- Light/dark mode theme support
 - Primary color: #4a90e2 (blue)
 - Global markdown styling in `index.css` with `.markdown-content` class
 - 12px padding on all markdown content to prevent cluttered appearance
 
+## Arena Modes
+
+### Council Mode (default)
+The original 3-stage deliberation with anonymized peer review:
+1. Stage 1: Parallel queries → individual responses
+2. Stage 2: Anonymize → Parallel ranking queries → evaluations + parsed rankings
+3. Stage 3: Chairman synthesis with full context
+
+### Round Robin Mode
+Sequential improvement of a shared draft through multiple passes.
+
+### Fight Mode
+Adversarial deliberation: answers → critiques → defenses → chairman synthesis.
+
+### Stacks Mode
+Pair-based merging: pair answers → merge → critiques → judge → defenses → chairman.
+
+### Complex Iterative Mode
+Extract/expand iterative chain before chairman synthesis.
+
+### Complex Questioning Mode
+Self-questioning: answers → self-questions → brief → muse → chairman.
+
 ## Key Design Decisions
 
-### Stage 2 Prompt Format
+### Stage 2 Prompt Format (Council Mode)
 The Stage 2 prompt is very specific to ensure parseable output:
 ```
 1. Evaluate each response individually first
@@ -88,8 +128,6 @@ The Stage 2 prompt is very specific to ensure parseable output:
 3. Numbered list format: "1. Response C", "2. Response A", etc.
 4. No additional text after ranking section
 ```
-
-This strict format allows reliable parsing while still getting thoughtful evaluations.
 
 ### De-anonymization Strategy
 - Models receive: "Response A", "Response B", etc.
@@ -103,11 +141,10 @@ This strict format allows reliable parsing while still getting thoughtful evalua
 - Never fail the entire request due to single model failure
 - Log errors but don't expose to user unless all models fail
 
-### UI/UX Transparency
-- All raw outputs are inspectable via tabs
-- Parsed rankings shown below raw text for validation
-- Users can verify system's interpretation of model outputs
-- This builds trust and allows debugging of edge cases
+### Context Budgeting
+- Per-model token limits defined in `MODEL_CONTEXT_LIMITS`
+- Safety margin (default 85%) and output token allowance
+- Chairman summarization when context exceeds limits
 
 ## Important Implementation Details
 
@@ -123,7 +160,7 @@ All backend modules use relative imports (e.g., `from .config import ...`) not a
 All ReactMarkdown components must be wrapped in `<div className="markdown-content">` for proper spacing. This class is defined globally in `index.css`.
 
 ### Model Configuration
-Models are hardcoded in `backend/config.py`. Chairman can be same or different from council members. The current default is Gemini as chairman per user preference.
+Models are configurable via the settings panel. Defaults are in `backend/config.py`. Chairman can be same or different from arena members.
 
 ## Common Gotchas
 
@@ -132,31 +169,20 @@ Models are hardcoded in `backend/config.py`. Chairman can be same or different f
 3. **Ranking Parse Failures**: If models don't follow format, fallback regex extracts any "Response X" patterns in order
 4. **Missing Metadata**: Metadata is ephemeral (not persisted), only available in API responses
 
-## Future Enhancement Ideas
-
-- Configurable council/chairman via UI instead of config file
-- Streaming responses instead of batch loading
-- Export conversations to markdown/PDF
-- Model performance analytics over time
-- Custom ranking criteria (not just accuracy/insight)
-- Support for reasoning models (o1, etc.) with special handling
-
 ## Testing Notes
 
-Use `test_openrouter.py` to verify API connectivity and test different model identifiers before adding to council. The script tests both streaming and non-streaming modes.
+Use `test_openrouter.py` to verify API connectivity and test different model identifiers before adding to arena. The script tests both streaming and non-streaming modes.
 
 ## Data Flow Summary
 
 ```
 User Query
     ↓
-Stage 1: Parallel queries → [individual responses]
+Mode Selection → Dispatch to MODE_RUNNERS[mode]
     ↓
-Stage 2: Anonymize → Parallel ranking queries → [evaluations + parsed rankings]
+Mode-specific pipeline (varies by mode)
     ↓
-Aggregate Rankings Calculation → [sorted by avg position]
-    ↓
-Stage 3: Chairman synthesis with full context
+Chairman synthesis with full context
     ↓
 Return: {stage1, stage2, stage3, metadata}
     ↓

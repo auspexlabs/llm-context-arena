@@ -1,5 +1,5 @@
 /**
- * API client for the LLM Council backend.
+ * API client for the LLM Context Arena backend.
  */
 
 // Allow overriding the backend URL via Vite env; default to local dev backend.
@@ -21,7 +21,7 @@ export const api = {
   /**
    * Create a new conversation.
    */
-  async createConversation(mode = 'baseline') {
+  async createConversation(mode = 'council') {
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
       headers: {
@@ -189,14 +189,26 @@ export const api = {
     return response.json();
   },
 
-  async reindexGit(conversationId) {
-    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/reindex_git`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      throw new Error('Failed to reindex from git');
+  async reindexGit(conversationId, repoRoot) {
+    const url = new URL(`${API_BASE}/api/conversations/${conversationId}/reindex_git`);
+    if (repoRoot) {
+      url.searchParams.set('repo_root', repoRoot);
     }
-    return response.json();
+    let response;
+    try {
+      response = await fetch(url.toString(), {
+        method: 'POST',
+      });
+    } catch (err) {
+      throw new Error(`Failed to fetch reindex (${url.toString()}): ${err.message || err}`);
+    }
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await response.json() : null;
+    if (!response.ok) {
+      const msg = data?.message || `Failed to reindex from git (status ${response.status})`;
+      throw new Error(msg);
+    }
+    return data || {};
   },
 
   async getSettings() {

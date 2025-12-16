@@ -1,5 +1,5 @@
 .sidebar {
-  width: 260px;
+  width: 300px;
   background: #f8f8f8;
   border-right: 1px solid #e0e0e0;
   display: flex;
@@ -85,11 +85,71 @@
   color: #333;
   font-size: 14px;
   margin-bottom: 4px;
+  font-weight: 700;
 }
 
 .conversation-meta {
   color: #999;
   font-size: 12px;
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: #777;
+}
+
+.theme-dark .conversation-title {
+  color: var(--text);
+}
+
+.theme-dark .conversation-meta {
+  color: var(--muted);
+}
+
+.theme-dark .sidebar {
+  background: #0d0b08;
+  border-color: var(--border);
+}
+
+.theme-dark .sidebar-header,
+.theme-dark .settings-panel {
+  border-color: var(--border);
+  background: #14100c;
+}
+
+.theme-dark .conversation-item {
+  color: var(--text);
+}
+
+.theme-dark .conversation-item:hover {
+  background: #121a2a;
+}
+
+.theme-dark .conversation-item.active {
+  background: #20160f;
+  border-color: var(--accent);
+}
+
+.theme-dark .sidebar-header h1,
+.theme-dark .settings-field label,
+.theme-dark .settings-status {
+  color: var(--text);
+}
+
+.theme-dark .mode-select,
+.theme-dark .new-conversation-btn,
+.theme-dark .settings-toggle,
+.theme-dark .settings-field textarea,
+.theme-dark .settings-field input,
+.theme-dark .settings-field select {
+  background: #17130f;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.theme-dark .reindex-status,
+.theme-dark .reindex-root {
+  color: var(--muted);
 }
 
 .settings-toggle {

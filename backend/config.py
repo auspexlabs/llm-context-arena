@@ -1,4 +1,4 @@
-"""Configuration for the LLM Council."""
+"""Configuration for LLM Context Arena."""
 
 import os
 from dotenv import load_dotenv
@@ -8,8 +8,8 @@ load_dotenv()
 # OpenRouter API key
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Council members - list of OpenRouter model identifiers
-COUNCIL_MODELS = [
+# Arena models - list of OpenRouter model identifiers
+ARENA_MODELS = [
     "openai/gpt-5.1",
     "google/gemini-3-pro-preview",
     "anthropic/claude-sonnet-4.5",
@@ -18,6 +18,9 @@ COUNCIL_MODELS = [
 
 # Chairman model - synthesizes final response
 CHAIRMAN_MODEL = "openai/gpt-5.1"
+
+# Backwards compatibility alias
+COUNCIL_MODELS = ARENA_MODELS  # Deprecated: use ARENA_MODELS
 
 # Model context limits (input tokens) for budgeting; tweak via env overrides
 MODEL_CONTEXT_LIMITS = {

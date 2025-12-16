@@ -18,7 +18,7 @@ def get_conversation_path(conversation_id: str) -> str:
     return os.path.join(DATA_DIR, f"{conversation_id}.json")
 
 
-def create_conversation(conversation_id: str, mode: str = "baseline") -> Dict[str, Any]:
+def create_conversation(conversation_id: str, mode: str = "council") -> Dict[str, Any]:
     """
     Create a new conversation.
 
@@ -100,7 +100,7 @@ def list_conversations() -> List[Dict[str, Any]]:
                     "created_at": data["created_at"],
                     "title": data.get("title", "New Conversation"),
                     "message_count": len(data["messages"]),
-                    "mode": data.get("mode", "baseline"),
+                    "mode": data.get("mode", "council"),
                 })
 
     # Sort by creation time, newest first

@@ -1,33 +1,184 @@
-# LLM Council (Local RAG + manual context fork)
+# LLM Context Arena
 
-![llmcouncil](header.jpg)
+![LLM Context Arena](header.jpg)
 
-This fork adds a practical RAG workflow on top of the original council app:
+**Multi-model consensus through configurable deliberation strategies.**
 
-- **Local LM Studio retrieval:** Embed with `text-embedding-nomic-embed-text-v1.5`, rerank with `text-embedding-bge-reranker-large`, neighbor expansion, and a configurable cap.
-- **Manual context controls:** Repo tree picker, `@file:` / `@token` directives, and manual context that bypasses RAG when present.
-- **Context clarity:** High-contrast context panel (collapsible by default) with unique file/line summary, scores, and manual vs RAG tags.
-- **UX helpers:** Stop button to abort streaming, scroll-to-bottom shortcut, upload status that shows indexing, and a CLI to preview context (`python -m backend.cli_context ...`).
+Why ask one LLM when you can make them debate, review, and synthesize? Context Arena routes your query through multiple frontier models with different orchestration modes - from simple peer review to adversarial debates to Socratic questioning chains.
 
-See `RAG_LMSTUDIO.md` for the LM Studio setup, model choices, and RAG details.
+This fork builds on Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council) with local RAG, context budgeting, and 6 distinct arena modes for getting models to agree (or productively disagree).
 
-The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
+---
 
-In a bit more detail, here is what happens when you submit a query:
+## The Arena Modes
 
-1. **Stage 1: First opinions**. The user query is given to all LLMs individually, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
-2. **Stage 2: Review**. Each individual LLM is given the responses of the other LLMs. Under the hood, the LLM identities are anonymized so that the LLM can't play favorites when judging their outputs. The LLM is asked to rank them in accuracy and insight.
-3. **Stage 3: Final response**. The designated Chairman of the LLM Council takes all of the model's responses and compiles them into a single final answer that is presented to the user.
+### 1. Council (Default Mode)
+The classic: everyone answers, everyone reviews anonymously, chairman synthesizes.
 
-## Vibe Code Alert
+```
+┌─────────────────────────────────────────────────────────┐
+│ Query ──► ALL MODELS ANSWER (parallel, +RAG context)    │
+│              │                                          │
+│              ▼                                          │
+│         ANONYMOUS PEER REVIEW                           │
+│         "Rank Response A, B, C, D..."                   │
+│              │                                          │
+│              ▼                                          │
+│         CHAIRMAN SYNTHESIZES                            │
+│         (uses top-ranked as spine)                      │
+└─────────────────────────────────────────────────────────┘
+```
 
-This project was 99% vibe coded as a fun Saturday hack because I wanted to explore and evaluate a number of LLMs side by side in the process of [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438). It's nice and useful to see multiple responses side by side, and also the cross-opinions of all LLMs on each other's outputs. I'm not going to support it in any way, it's provided here as is for other people's inspiration and I don't intend to improve it. Code is ephemeral now and libraries are over, ask your LLM to change it in whatever way you like.
+**Prompt flow:**
+- Stage 1: Each model gets `[system: you are Agent N] + [context] + [user query]`
+- Stage 2: Each model gets `[all responses anonymized as A/B/C/D] + [rank them]`
+- Stage 3: Chairman gets `[all responses + rankings] + [synthesize final answer]`
 
-## Setup
+---
+
+### 2. Round Robin (Sequential Refinement)
+Each model builds on the previous answer. Like a relay race of ideas.
+
+```
+Query ──► Model A ──► Model B refines ──► Model C refines ──► Chairman finalizes
+              │              │                   │
+              └──────────────┴───────────────────┘
+                    each sees prior + original context
+```
+
+**Prompt flow:**
+- Turn 1: Model A gets `[context] + [query]` → produces draft
+- Turn 2: Model B gets `[original context] + [Model A's draft]` → refines
+- Turn N: Model N gets `[original context] + [previous draft]` → refines
+- Final: Chairman gets `[last draft]` → produces final answer
+
+---
+
+### 3. Fight (Adversarial Debate)
+Models critique each other, then defend their positions. Chairman summarizes the battle.
+
+```
+Query ──► ALL ANSWER ──► ALL CRITIQUE PEERS ──► ALL DEFEND ──► Chairman: debate summary
+               │                │                    │
+               └────────────────┴────────────────────┘
+                      pointed critique, brief defense
+```
+
+**Prompt flow:**
+- Round 1: All models answer (parallel)
+- Round 2: Each model critiques peers: `[your answer] + [peer answers] → point out errors, risks`
+- Round 3: Each model defends: `[your answer] + [critiques of you] → fix or rebut`
+- Final: Chairman summarizes consensus, disagreements, key risks
+
+---
+
+### 4. Stacks (Hierarchical Merge + Attack)
+Two answer, chairman merges, two critics attack, chairman judges, defenders respond.
+
+```
+Query ──► 2 ANSWER ──► CHAIRMAN MERGES ──► 2 CRITICS ATTACK ──► CHAIRMAN JUDGES
+                            │                     │                    │
+                            ▼                     ▼                    ▼
+                    "preserve optionality"   "attack weak spots"   (has original context)
+                                                                       │
+                                              ┌────────────────────────┘
+                                              ▼
+                                    ORIGINAL 2 DEFEND ──► CHAIRMAN FINAL
+                                                          (no original context)
+```
+
+**Prompt flow:**
+- Phase 1: Models A & B answer
+- Phase 2: Chairman merges with "preserve optionality" instruction
+- Phase 3: Models C & D critique the merged answer
+- Phase 4: Chairman judges critiques against original context
+- Phase 5: Models A & B defend against critiques
+- Final: Chairman synthesizes (deliberately without original context)
+
+---
+
+### 5. Complex Iterative (Extract/Expand Alternation)
+Alternating summarize-then-elaborate cycles. Good for deep dives.
+
+```
+Query ──► EXTRACT ──► EXPAND ──► EXTRACT ──► EXPAND ──► Chairman final
+           (summary)   (detail)   (summary)   (detail)
+              │           │           │           │
+              └───────────┴───────────┴───────────┘
+                   each sees only prior step + original context
+```
+
+**Prompt flow:**
+- Extract: `[context] + [query] → summarize intent, list key facts, suggest next prompt`
+- Expand: `[prior summary] + [suggested prompt] → elaborate with actionable detail`
+- Repeat alternation for N cycles
+- Chairman synthesizes the extract/expand chain
+
+---
+
+### 6. Complex Questioning (Socratic Method)
+Models question their own answers through peers' perspectives. Two-phase introspection.
+
+```
+Query ──► ALL ANSWER ──► ALL QUESTION OWN ANSWERS ──► Chairman summary
+                              (via peer lenses)              │
+                                    │                        ▼
+                                    │              MUSE ROUND (no original context)
+                                    │                        │
+                                    └────────────────────────┴──► Chairman final
+```
+
+**Prompt flow:**
+- Round 1: All models answer (parallel)
+- Round 2: Each model re-reads own answer "through peers' lenses", updates position
+- Round 3: Chairman summarizes convergences/divergences
+- Round 4: Models "muse" on the summary alone (no original context)
+- Final: Chairman synthesizes debate + muse rounds
+
+---
+
+## What We Added
+
+Built on top of Karpathy's original council:
+
+### Local RAG System
+- **ZIP repo upload** per conversation - drop a codebase, get context-aware answers
+- **FAISS vector indexing** with LM Studio embeddings (`nomic-embed-text-v1.5`)
+- **Two-stage retrieval**: vector search → BGE reranker → neighbor chunk expansion
+- **Git-based indexing**: build context from `git ls-tree` + working tree changes
+
+### Context Intelligence
+- **Per-model token budgets** with safety margins (85% of context window)
+- **Auto-summarization** when context exceeds budget (Chairman compresses)
+- **Manual context override**: file picker + `@file:` directives bypass RAG
+
+### @Directives
+Control behavior inline with your query:
+
+| Directive | Effect |
+|-----------|--------|
+| `@norag` / `@raw` | Skip RAG retrieval entirely |
+| `@summarize` | Force context summarization even if under budget |
+| `@tokenbudget <n>` | Set per-turn context cap |
+| `@cite` | Require inline citations `[file:line]` |
+| `@short` / `@detailed` | Hint at response length |
+| `@trace` / `@debug` | Attach retrieval metadata to response |
+| `@reset` | Clear conversation state |
+| `@temp <0-1>` | Override temperature |
+| `@maxtokens <n>` | Override max output tokens |
+
+### UX Improvements
+- **Stop button** to abort streaming responses
+- **Collapsible context panel** showing RAG sources, scores, token counts
+- **File tree browser** for manual context selection
+- **Upload progress** with indexing feedback
+- **Scroll-to-bottom** shortcut
+
+---
+
+## Quick Start
 
 ### 1. Install Dependencies
-
-The project uses [uv](https://docs.astral.sh/uv/) for project management.
 
 **Backend:**
 ```bash
@@ -36,85 +187,123 @@ uv sync
 
 **Frontend:**
 ```bash
-cd frontend
-npm install
-cd ..
+cd frontend && npm install && cd ..
 ```
 
-### 2. Configure API Key
+### 2. Configure Environment
 
-Create a `.env` file in the project root (see `.env.example`):
+Create `.env` in project root:
 
 ```bash
+# Required
 OPENROUTER_API_KEY=sk-or-v1-...
+
+# LM Studio (for local RAG)
 LMSTUDIO_BASE_URL=http://localhost:1234/v1
 LMSTUDIO_EMBED_MODEL=text-embedding-nomic-embed-text-v1.5
 LMSTUDIO_RERANK_MODEL=text-embedding-bge-reranker-large
+
+# Retrieval tuning
 RERANK_ENABLED=true
 RETRIEVE_CANDIDATES=50
 RERANK_TOP_K=20
 CONTEXT_CHUNK_CAP=60
 ```
 
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+### 3. Start LM Studio (for RAG)
 
-### 3. Configure Models (Optional)
+Load these models in LM Studio with API server enabled on port 1234:
+- `text-embedding-nomic-embed-text-v1.5` (embeddings)
+- `text-embedding-bge-reranker-large` (reranking)
 
-Edit `backend/config.py` to customize the council:
+See [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md) for detailed setup.
+
+### 4. Run
+
+```bash
+./start.sh
+# Or manually:
+# Terminal 1: uv run python -m backend.main
+# Terminal 2: cd frontend && npm run dev
+```
+
+Open http://localhost:5173
+
+---
+
+## Configuration
+
+### Arena Models
+
+Edit `backend/config.py`:
 
 ```python
-COUNCIL_MODELS = [
+ARENA_MODELS = [
     "openai/gpt-5.1",
     "google/gemini-3-pro-preview",
     "anthropic/claude-sonnet-4.5",
     "x-ai/grok-4",
 ]
 
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+CHAIRMAN_MODEL = "openai/gpt-5.1"
 ```
 
-## Running the Application
+### Context Limits
 
-**Option 1: Use the start script**
-```bash
-./start.sh
-```
+Per-model token budgets (override via env):
 
-**Option 2: Run manually**
+| Model | Default Context | Env Override |
+|-------|-----------------|--------------|
+| `openai/gpt-5.1` | 400,000 | `CTX_LIMIT_GPT_5_1` |
+| `google/gemini-3-pro-preview` | 1,048,576 | `CTX_LIMIT_GEMINI_3_PRO_PREVIEW` |
+| `anthropic/claude-sonnet-4.5` | 1,000,000 | `CTX_LIMIT_CLAUDE_SONNET_4_5` |
+| `x-ai/grok-4` | 256,000 | `CTX_LIMIT_GROK_4` |
 
-Terminal 1 (Backend):
-```bash
-uv run python -m backend.main
-```
+Safety margin: 85% (`CONTEXT_SAFETY_MARGIN=0.85`)
+Output allowance: 4000 tokens (`OUTPUT_TOKEN_ALLOWANCE=4000`)
 
-Terminal 2 (Frontend):
-```bash
-cd frontend
-npm run dev
-```
-
-Then open http://localhost:5173 in your browser.
-
-### 4. Using local RAG and manual context
-
-- Upload a repo ZIP in the chat UI (per conversation). The picker loads once indexing finishes.
-- Manual context (picker or `@file:` / `@token`) bypasses RAG for that message. Automatic RAG uses FAISS top-N → rerank to top-K with neighbor expansion and injects a guidance note asking models to flag missing context.
-- Context panel (collapsible) shows unique file count, line totals, scores, and manual vs RAG tags. Full manual files are summarized by name; snippets and RAG chunks show content.
-- Abort a response with “Stop”; use the scroll-to-bottom button when you’ve scrolled up.
-
-### 5. Inspect context from the CLI
-
-Preview what context would be sent for a query:
-
-```bash
-python -m backend.cli_context --conversation <id> --query "How do we start the server?"
-# You can force files without RAG:
-python -m backend.cli_context --conversation <any> --query "..." --manual-file backend/main.py
-```
+---
 
 ## Tech Stack
 
-- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
-- **Frontend:** React + Vite, react-markdown for rendering
+- **Backend:** FastAPI, Python 3.10+, async httpx, OpenRouter API
+- **Frontend:** React 19, Vite 7, react-markdown, react-dropzone
+- **RAG:** LangChain, FAISS, LM Studio (OpenAI-compatible API)
 - **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
+
+---
+
+## CLI Tools
+
+Preview context that would be sent for a query:
+
+```bash
+python -m backend.cli_context --conversation <id> --query "How does auth work?"
+
+# Force specific files (bypass RAG):
+python -m backend.cli_context --conversation <id> --query "..." --manual-file backend/main.py
+```
+
+---
+
+## Documentation
+
+- [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md) - LM Studio setup and RAG details
+- [PLAN.md](PLAN.md) - Feature roadmap and mode specifications
+- [COUNCIL_OG_README.md](COUNCIL_OG_README.md) - Original Karpathy README
+
+---
+
+## Acknowledgments
+
+This project stands on the shoulders of a giant.
+
+**Massive thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for creating [llm-council](https://github.com/karpathy/llm-council) and open-sourcing the concept. The original 3-stage council (answer → anonymous peer review → chairman synthesis) is elegant and effective. We've just bolted on more ways to make models argue with each other.
+
+Karpathy's "vibe code" philosophy - minimal, readable, hackable - is alive in this fork. This is still a Saturday hack project. Code is ephemeral, ask your LLM to change it however you like.
+
+---
+
+## Vibe Code Alert
+
+This project was extended in the same spirit as the original: vibe coded as a fun hack to explore multi-model consensus strategies. It's useful, it's interesting, it's not enterprise software. Fork it, break it, make it yours.

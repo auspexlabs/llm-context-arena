@@ -5,7 +5,9 @@ import { api } from '../api';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
+import { RoundTrack } from './RoundTrack';
 import './ChatInterface.css';
+import './RoundTrack.css';
 
 function RepoDropzone({ conversationId, onIndexed }) {
   const [status, setStatus] = useState(null);
@@ -88,7 +90,7 @@ function RepoDropzone({ conversationId, onIndexed }) {
           <span>Drop your repo .zip here…</span>
         ) : (
           <span>
-            Drag &amp; drop a repo <code>.zip</code> here to give the council local
+            Drag &amp; drop a repo <code>.zip</code> here to give the arena local
             code context for this conversation.
           </span>
         )}
@@ -198,6 +200,11 @@ export default function ChatInterface({
   onSendMessage,
   onStop,
   isLoading,
+  modeProgress,
+  breadcrumbs = [],
+  theme = 'light',
+  liveSteps = [],
+  repoRoot,
 }) {
   const [input, setInput] = useState('');
   const [manualSelections, setManualSelections] = useState([]);
@@ -208,8 +215,158 @@ export default function ChatInterface({
   const messagesContainerRef = useRef(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [reindexStatus, setReindexStatus] = useState('');
-  const [focusedModel, setFocusedModel] = useState(null);
+  const [focusedTarget, setFocusedTarget] = useState(null);
   const stage1Ref = useRef(null);
+  const [currentModeProgress, setCurrentModeProgress] = useState(modeProgress || { current: 0, total: 0, label: '' });
+  const [expandedPrompts, setExpandedPrompts] = useState({});
+  const [pendingScrollIndex, setPendingScrollIndex] = useState(null);
+  const timelineRefs = useRef({});
+  const quips = [
+    'Sharpening pencils…',
+    'Consulting the oracle…',
+    'Counting tokens so you don’t have to.',
+    'Arguing politely…',
+    'Refilling the coffee pot…',
+  ];
+  const [quipIndex, setQuipIndex] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  const shortModelName = (model) => (model?.split('/')?.[1] || model || '').trim();
+  const friendlyStepLabel = (label) => {
+    const map = {
+      answer: 'Collecting answers',
+      critique: 'Critiques',
+      defense: 'Defenses',
+      muse: 'Muse round',
+      brief: 'Chair brief',
+      extract: 'Extracting',
+      expand: 'Expanding',
+      stacks_merge: 'Merging answers',
+      stacks_critique: 'Critiques',
+      stacks_judge: 'Judging',
+      stacks_defense: 'Defending',
+      round_robin: 'Round Robin pass',
+      fight: 'Fight flow',
+      stacks: 'Stacks flow',
+      complex_iterative: 'Iterative flow',
+      complex_questioning: 'Questioning flow',
+      council: 'Council',
+      baseline: 'Council',
+    };
+    if (!label) return '';
+    return map[label] || label.replace(/_/g, ' ');
+  };
+  const modeDescriptions = {
+    council: 'Council. Answers → rankings → chairman synthesis.',
+    baseline: 'Council. Answers → rankings → chairman synthesis.',
+    round_robin: 'Round Robin passes improve a shared draft before chair finalizes.',
+    fight: 'Fight: answers, critiques, defenses, then chair.',
+    stacks: 'Stacks: pair answers, merge, critiques, judge, defenses, chair.',
+    complex_iterative: 'Iterative extract/expand chain, then chair.',
+    complex_questioning: 'Questioning: answers, self-questions, brief, muse, chair.',
+  };
+
+  const formatProgressLabel = (mp) => {
+    if (!mp?.total) return '';
+    const rawLabel = friendlyStepLabel(mp.label) || 'Step';
+    const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+    const model = shortModelName(mp.activeModel);
+    const current = mp.current ?? 0;
+    const total = mp.total ?? 0;
+    const stepText = `${Math.max(0, current)}/${total || '?'}`;
+    return model ? `${label} · ${model} (${stepText})` : `${label} (${stepText})`;
+  };
+
+  const spinnerText = () => {
+    const modeLabelMap = {
+      round_robin: 'Round Robin',
+      fight: 'Fight',
+      stacks: 'Stacks',
+      complex_iterative: 'Complex Iterative',
+      complex_questioning: 'Complex Questioning',
+      baseline: 'Council',
+      council: 'Council',
+    };
+    const modeLabel = modeLabelMap[conversation?.mode] || 'Council';
+    const label = friendlyStepLabel(currentModeProgress?.label);
+    const model = shortModelName(currentModeProgress?.activeModel);
+    const stepText =
+      currentModeProgress?.total && (currentModeProgress.current || currentModeProgress.current === 0)
+        ? `${currentModeProgress.current}/${currentModeProgress.total}`
+        : '';
+
+    const timePart = elapsedSeconds ? ` · ${elapsedSeconds}s` : '';
+
+    if (label) {
+      return `${modeLabel}: ${label}${model ? ` · ${model}` : ''}${stepText ? ` (${stepText})` : ''}${timePart}`;
+    }
+    return `Consulting the ${modeLabel.toLowerCase()}...${timePart}`;
+  };
+
+  const stage1LoadingText = () => {
+    switch (conversation.mode) {
+      case 'round_robin':
+        return 'Running Stage 1: Drafting (Round Robin)...';
+      case 'fight':
+        return 'Running Stage 1: Gathering answers for Fight...';
+      case 'stacks':
+        return 'Running Stage 1: Pair answers for Stacks...';
+      case 'complex_iterative':
+        return 'Running Stage 1: Extract/Expand kickoff...';
+      case 'complex_questioning':
+        return 'Running Stage 1: Gathering answers for Questioning...';
+      default:
+        return 'Running Stage 1: Collecting individual responses...';
+    }
+  };
+
+  const computeActiveIndex = (steps = []) => {
+    if (!steps.length || !currentModeProgress?.total) return -1;
+    const base =
+      currentModeProgress.state === 'finish'
+        ? (currentModeProgress.current ?? 0) - 1
+        : currentModeProgress.current ?? 0;
+    if (base < 0) return -1;
+    return Math.min(base, steps.length - 1);
+  };
+
+  const previewText = (text = '', limit = 220) => {
+    if (!text) return '';
+    const normalized = `${text}`.trim();
+    if (!normalized) return '';
+    return normalized.length > limit ? `${normalized.slice(0, limit)}…` : normalized;
+  };
+
+  const sanitizePrompt = (prompt = '') => {
+    if (!prompt) return '';
+    const text = typeof prompt === 'string' ? prompt : String(prompt);
+    try {
+      // Drop explicit context blocks so the UI doesn't show injected RAG snippets.
+      const withoutContext = text.replace(/# (relevant|manually selected)[\s\S]*?(?=User question:|$)/gi, '').trim();
+      const target = withoutContext || text;
+      const markerIdx = target.lastIndexOf('User question:');
+      if (markerIdx !== -1) {
+        return target.slice(markerIdx).trim();
+      }
+      return target.trim();
+    } catch (err) {
+      console.error('sanitizePrompt failed', err);
+      return text;
+    }
+  };
+
+  const togglePrompt = (idx) => {
+    setExpandedPrompts((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  useEffect(() => {
+    if (pendingScrollIndex === null || pendingScrollIndex === undefined) return;
+    const el = timelineRefs.current?.[pendingScrollIndex];
+    if (el?.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setPendingScrollIndex(null);
+  }, [pendingScrollIndex]);
 
   const refreshRepoTree = () => {
     if (!conversation?.id) return;
@@ -223,13 +380,102 @@ export default function ChatInterface({
     if (!conversation?.id) return;
     try {
       setReindexStatus('Reindexing…');
-      const resp = await api.reindexGit(conversation.id);
+      const resp = await api.reindexGit(conversation.id, repoRoot);
       setReindexStatus(resp.message || 'Reindexed.');
       refreshRepoTree();
     } catch (err) {
       console.error('Failed to reindex git', err);
-      setReindexStatus('Reindex failed');
+      setReindexStatus(err.message || 'Reindex failed');
     }
+  };
+
+  const renderTimeline = (steps = [], activeIndex = -1) => {
+    if (!steps || steps.length === 0) return null;
+    return (
+      <div className="mode-timeline">
+        <div className="timeline-title">Mode timeline</div>
+        {steps.map((step, idx) => {
+          const modelName = shortModelName(step.model) || step.model || 'model';
+          const rawPrompt = step.prompt_full || step.promptFull || step.prompt_preview || step.promptPreview || '';
+          const rawPromptText = typeof rawPrompt === 'string' ? rawPrompt : String(rawPrompt || '');
+          const promptText = sanitizePrompt(rawPromptText);
+          const promptWasStripped = rawPromptText && promptText && promptText.length !== rawPromptText.trim().length;
+          const promptPreview = previewText(promptText || rawPromptText);
+          const responsePreview = previewText(step.response);
+          const summary = responsePreview || promptPreview || 'No prompt/response captured.';
+          const isExpanded = !!expandedPrompts[idx];
+          return (
+            <div
+              key={idx}
+              id={`timeline-step-${idx}`}
+              className={`timeline-card ${idx === activeIndex ? 'active' : ''}`}
+              onClick={() => togglePrompt(idx)}
+              ref={(el) => {
+                if (el) {
+                  timelineRefs.current[idx] = el;
+                }
+              }}
+            >
+              <div className="timeline-top">
+                <span className="timeline-order">#{idx + 1}</span>
+                <span className="timeline-role">{step.role || 'step'}</span>
+                <span className="timeline-model">{modelName}</span>
+                {typeof step.duration_ms === 'number' && (
+                  <span className="timeline-duration">{step.duration_ms} ms</span>
+                )}
+              </div>
+              <div className="timeline-body">
+                <div className="timeline-summary">
+                  <div className="timeline-label">
+                    {step.role || 'step'} → {modelName}
+                  </div>
+                  <div className="timeline-preview">
+                    {summary}
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="timeline-detail">
+                    {(promptText || rawPromptText) ? (
+                      <div className="timeline-block">
+                        <div className="timeline-block-title">
+                          Prompt {promptWasStripped ? <span className="muted">(context hidden in display)</span> : null}
+                        </div>
+                        <div className="timeline-block-text">{promptText || rawPromptText}</div>
+                      </div>
+                    ) : null}
+                    {step.response ? (
+                      <div className="timeline-block nested">
+                        <div className="timeline-block-title">Response</div>
+                        <div className="timeline-block-text">{step.response}</div>
+                      </div>
+                    ) : null}
+                    {!rawPromptText && !step.response ? (
+                      <div className="timeline-empty">No details recorded for this step.</div>
+                    ) : null}
+                  </div>
+                )}
+
+                <div className="timeline-meta">
+                  {step.est_tokens ? <span>{step.est_tokens} est tokens</span> : null}
+                  {step.context_tokens !== undefined ? <span>context {step.context_tokens}</span> : null}
+                  <button
+                    className="timeline-toggle"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePrompt(idx);
+                    }}
+                  >
+                    {isExpanded ? 'Collapse details' : 'Expand prompt/response'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   const scrollToBottom = () => {
@@ -238,7 +484,37 @@ export default function ChatInterface({
 
   useEffect(() => {
     scrollToBottom();
+    setCurrentModeProgress(modeProgress || { current: 0, total: 0, label: '' });
+  }, [modeProgress]);
+
+  useEffect(() => {
+    scrollToBottom();
+    setCurrentModeProgress({ current: 0, total: 0, label: '' });
+    setExpandedPrompts({});
+    setPendingScrollIndex(null);
+    timelineRefs.current = {};
+    refreshRepoTree();
   }, [conversation]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isLoading, currentModeProgress.activeModel]);
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const timer = setInterval(() => {
+      setQuipIndex((idx) => (idx + 1) % quips.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [isLoading]);
 
   useEffect(() => {
     const el = messagesContainerRef.current;
@@ -252,7 +528,7 @@ export default function ChatInterface({
     el.addEventListener('scroll', handleScroll);
     handleScroll();
     return () => el.removeEventListener('scroll', handleScroll);
-  }, [conversation?.id]);
+  }, [conversation?.id, modeProgress]);
 
   const parseDirectives = (text) => {
     const regex = /@("[^"]+"|\S+)/g;
@@ -310,6 +586,9 @@ export default function ChatInterface({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim() || isLoading || resolvingDirectives) return;
+    setCurrentModeProgress({ current: 0, total: 0, label: '' });
+    setExpandedPrompts({});
+    setContextPanelOpen(false);
 
     try {
       setResolvingDirectives(true);
@@ -375,7 +654,7 @@ export default function ChatInterface({
   };
 
   const renderRepoTree = (nodes) => {
-    if (!nodes || nodes.length === 0) return <div className="repo-tree-empty">No repo uploaded.</div>;
+    if (!nodes || nodes.length === 0) return <div className="repo-tree-empty">No repo uploaded or tree unavailable.</div>;
 
     return nodes.map((node) => {
       if (node.type === 'dir') {
@@ -401,9 +680,9 @@ export default function ChatInterface({
 
   if (!conversation) {
     return (
-      <div className="chat-interface">
+      <div className={`chat-interface theme-${theme}`}>
         <div className="empty-state">
-          <h2>Welcome to LLM Council</h2>
+          <h2>Welcome to LLM Context Arena</h2>
           <p>Create a new conversation to get started</p>
         </div>
       </div>
@@ -411,77 +690,139 @@ export default function ChatInterface({
   }
 
   return (
-    <div className="chat-interface">
-      {/* New: repo dropzone for this conversation */}
-      <RepoDropzone conversationId={conversation.id} onIndexed={refreshRepoTree} />
-      <div className="repo-actions">
-        <button type="button" className="context-toggle" onClick={handleReindexGit}>
-          Reindex from git
-        </button>
-        {reindexStatus && <span className="reindex-status">{reindexStatus}</span>}
-      </div>
-
-      <div className="mode-badge">Mode: {conversation.mode || 'baseline'}</div>
-
-      <div className="context-tools">
-        <div className="context-tools-header">
-          <div>
-            <div className="context-tools-title">Manual context</div>
-            <div className="context-tools-subtitle">
-              Click files to add, or use @file:path / @token in your message. Manual context skips auto-RAG.
-              <details className="directive-details">
-                <summary>More about @ commands</summary>
-                <div className="directive-list">
-                  <div><code>@norag</code> / <code>@raw</code>: disable auto-RAG (manual context only)</div>
-                  <div><code>@summarize</code>: force summarizer even if under budget</div>
-                  <div><code>@tokenbudget N</code>: cap total input tokens to ~N</div>
-                  <div><code>@short</code> / <code>@detailed</code>: length hint</div>
-                  <div><code>@cite</code>: ask for citations when context is used</div>
-                  <div><code>@noexecute</code>: no tool calls/side effects</div>
-                  <div><code>@reset</code>: clear conversation history (keep title)</div>
-                  <div><code>@temp X</code> (0-1) / <code>@maxtokens N</code>: override model params</div>
-                </div>
-              </details>
+    <div className={`chat-interface theme-${theme}`}>
+      <div className="top-grid">
+        <div className="controls-column">
+          <div className="controls-row">
+            <RepoDropzone conversationId={conversation.id} onIndexed={refreshRepoTree} />
+            <div className="repo-actions inline">
+              <button type="button" className="context-toggle" onClick={handleReindexGit}>
+                Reindex from git
+              </button>
+              {reindexStatus && <span className="reindex-status">{reindexStatus}</span>}
+              {repoRoot && (
+                <span className="reindex-root">Root: {repoRoot}</span>
+              )}
             </div>
           </div>
-          <button className="context-toggle" onClick={() => setContextPanelOpen((v) => !v)}>
-            {contextPanelOpen ? 'Hide picker' : 'Show picker'}
-          </button>
-        </div>
-        {contextPanelOpen && (
-          <div className="context-picker">
-            <div className="repo-tree" aria-label="Repository tree">
-              {renderRepoTree(repoTree)}
-            </div>
-            <div className="selected-context">
-              <div className="selected-context-header">
-                <div className="selected-context-title">Selected for next message</div>
-                <button
-                  type="button"
-                  className="clear-selection"
-                  onClick={handleClearManualSelections}
-                  disabled={manualSelections.length === 0}
-                >
-                  Clear all
-                </button>
+          <div className="context-tools">
+            <div className="context-tools-header">
+              <div>
+                <div className="context-tools-title">Manual context</div>
+                <div className="context-tools-subtitle">
+                  Click files to add, or use @file:path / @token. Manual context skips auto-RAG.
+                </div>
               </div>
-              {manualSelections.length === 0 && <div className="selected-context-empty">None yet</div>}
-              {manualSelections.map((item) => (
-                <div className="selected-chip" key={item.path}>
-                  <span className="chip-path">{item.path}</span>
-                  <button className="chip-remove" onClick={() => handleRemoveManual(item.path)}>×</button>
-                </div>
-              ))}
+              <button className="context-toggle" onClick={() => setContextPanelOpen((v) => !v)}>
+                {contextPanelOpen ? 'Hide details' : 'Expand details'}
+              </button>
             </div>
+            {contextPanelOpen && (
+              <div className="context-picker">
+                <div className="repo-tree" aria-label="Repository tree">
+                  {renderRepoTree(repoTree)}
+                </div>
+                <div className="selected-context">
+                  <div className="selected-context-header">
+                    <div className="selected-context-title">Selected for next message</div>
+                    <button
+                      type="button"
+                      className="clear-selection"
+                      onClick={handleClearManualSelections}
+                      disabled={manualSelections.length === 0}
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  {manualSelections.length === 0 && <div className="selected-context-empty">None yet</div>}
+                  {manualSelections.map((item) => (
+                    <div className="selected-chip" key={item.path}>
+                      <span className="chip-path">{item.path}</span>
+                      <button className="chip-remove" onClick={() => handleRemoveManual(item.path)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+        <div className="mode-summary-card">
+          <div className="mode-badge large">Mode: {conversation.mode || 'council'}</div>
+          <div className="mode-summary-text">
+            {modeDescriptions[conversation.mode] || 'Multi-step arena orchestration.'}
+          </div>
+          <div className="mode-summary-steps">
+            {(() => {
+              const steps = conversation.mode === 'round_robin'
+                ? ['Drafts (passes)', 'Chair synthesis']
+                : conversation.mode === 'fight'
+                ? ['Answers', 'Critiques', 'Defenses', 'Chair']
+                : conversation.mode === 'stacks'
+                ? ['Pair answers', 'Merge', 'Critiques', 'Judge', 'Defenses', 'Chair']
+                : conversation.mode === 'complex_iterative'
+                ? ['Extract/Expand x2', 'Chair']
+                : conversation.mode === 'complex_questioning'
+                ? ['Answers', 'Self-questions', 'Brief', 'Muse', 'Chair']
+                : ['Answers', 'Rankings', 'Chair'];
+              return steps.map((s, idx) => <span key={idx} className="mode-chip">{s}</span>);
+            })()}
+          </div>
+          {contextPanelOpen && (
+            <div className="directives-panel">
+              <div className="directives-title">@ directives</div>
+              <div className="directives-grid">
+                <div className="directive-item"><span className="dir-name">@lastchair</span> Reuse previous chairman reply as context (skip RAG).</div>
+                <div className="directive-item"><span className="dir-name">@norag</span> Skip RAG entirely.</div>
+                <div className="directive-item"><span className="dir-name">@summarize</span> Force context summarization.</div>
+                <div className="directive-item"><span className="dir-name">@tokenbudget N</span> Set per-model context cap.</div>
+                <div className="directive-item"><span className="dir-name">@temp X</span> Set temperature (0-1).</div>
+                <div className="directive-item"><span className="dir-name">@maxtokens N</span> Override max output tokens.</div>
+                <div className="directive-item"><span className="dir-name">@cite</span> Require inline citations.</div>
+                <div className="directive-item"><span className="dir-name">@reset</span> Reset the conversation.</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="messages-container" ref={messagesContainerRef}>
+        {breadcrumbs.length > 0 && (
+          <div className="breadcrumb-strip">
+            {breadcrumbs.map((crumb) => (
+              <div
+                key={crumb.id}
+                className="breadcrumb-item"
+                title={`${friendlyStepLabel(crumb.label)}${crumb.model ? ` · ${shortModelName(crumb.model)}` : ''}${crumb.context_tokens ? ` (${crumb.context_tokens} ctx)` : ''}`}
+              >
+                <span className="breadcrumb-label">{friendlyStepLabel(crumb.label) || 'Step'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {currentModeProgress.total > 0 && (
+          <div className="mode-progress">
+            <div className="mode-progress-bar">
+              <div
+                className="mode-progress-fill"
+                style={{
+                  width: `${currentModeProgress.total ? Math.min(
+                    100,
+                    Math.round(((currentModeProgress.current || 0) / currentModeProgress.total) * 100)
+                  ) : 0}%`,
+                }}
+              />
+            </div>
+            <div className="mode-progress-label">
+              {formatProgressLabel(currentModeProgress) ||
+                `Step ${currentModeProgress.current}/${currentModeProgress.total}`}
+            </div>
+          </div>
+        )}
+
         {conversation.messages.length === 0 ? (
           <div className="empty-state">
             <h2>Start a conversation</h2>
-            <p>Ask a question to consult the LLM Council</p>
+            <p>Ask a question to consult the Arena</p>
           </div>
         ) : (
           conversation.messages.map((msg, index) => (
@@ -497,24 +838,35 @@ export default function ChatInterface({
                 </div>
               ) : (
                 <div className="assistant-message">
-                  <div className="message-label">LLM Council</div>
+                  <div className="message-label">LLM Context Arena</div>
 
                   {/* Stage 1 */}
                   {msg.loading?.stage1 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>
-                        Running Stage 1: Collecting individual responses...
-                      </span>
+                      <span>{stage1LoadingText()}</span>
                     </div>
                   )}
                   {msg.stage1 && (
                     <Stage1
                       ref={stage1Ref}
                       responses={msg.stage1}
-                      focusedModel={focusedModel}
-                      onActiveChange={setFocusedModel}
+                      focusedTarget={focusedTarget}
+                      onActiveChange={setFocusedTarget}
+                      inProgressIndex={
+                        isLoading && index === conversation.messages.length - 1
+                          ? currentModeProgress?.activeModel
+                            ? msg.stage1.findIndex((r) => r.model === currentModeProgress.activeModel)
+                            : computeActiveIndex(msg.stage1)
+                          : -1
+                      }
                     />
+                  )}
+                  {msg.loading?.stage1 && msg.stage1 && !isLoading && (
+                    <div className="stage-loading done">
+                      <div className="spinner" style={{ visibility: 'hidden' }}></div>
+                      <span>Stage 1 complete</span>
+                    </div>
                   )}
 
                   {/* Stage 2 */}
@@ -527,13 +879,46 @@ export default function ChatInterface({
                   {msg.stage2 && (
                     <Stage2
                       rankings={msg.stage2}
-                      labelToModel={msg.metadata?.label_to_model}
+                      labelToModel={msg.metadata?.label_to_model || msg.metadata?.labelToModel}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
                       onSelectModel={(model) => {
-                        setFocusedModel(model);
+                        setFocusedTarget({ model });
                         stage1Ref.current?.scrollIntoView({ behavior: 'smooth' });
                       }}
                     />
+                  )}
+
+                  {conversation.mode === 'fight' && msg.metadata?.steps && (
+                    <div className="fight-transcript">
+                      <h4>Fight Transcript</h4>
+                      <div className="fight-block">
+                        <strong>Answers</strong>
+                        {msg.metadata.steps.filter((s) => s.role === 'answer').map((s, idx) => (
+                          <div key={`ans-${idx}`} className="fight-line">
+                            <span className="fight-model">{shortModelName(s.model)}</span>
+                            <span className="fight-text">{(s.response || '').slice(0, 160)}{(s.response || '').length > 160 ? '…' : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="fight-block">
+                        <strong>Critiques</strong>
+                        {msg.metadata.steps.filter((s) => s.role === 'critique').map((s, idx) => (
+                          <div key={`crit-${idx}`} className="fight-line">
+                            <span className="fight-model">{shortModelName(s.model)}</span>
+                            <span className="fight-text">{(s.response || '').slice(0, 160)}{(s.response || '').length > 160 ? '…' : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="fight-block">
+                        <strong>Defenses</strong>
+                        {msg.metadata.steps.filter((s) => s.role === 'defense').map((s, idx) => (
+                          <div key={`def-${idx}`} className="fight-line">
+                            <span className="fight-model">{shortModelName(s.model)}</span>
+                            <span className="fight-text">{(s.response || '').slice(0, 160)}{(s.response || '').length > 160 ? '…' : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
                   {/* Stage 3 */}
@@ -555,12 +940,58 @@ export default function ChatInterface({
         {isLoading && (
           <div className="loading-indicator">
             <div className="spinner"></div>
-            <span>Consulting the council...</span>
+            <span>
+              {spinnerText()}
+            </span>
+            <span className="loading-quip">{quips[quipIndex]}</span>
             {onStop && (
               <button className="stop-button" type="button" onClick={onStop}>
                 Stop
               </button>
             )}
+          </div>
+        )}
+
+        {!isLoading &&
+          conversation.messages
+            .filter((msg) => msg.role === 'assistant')
+            .slice(-1)
+            .map((msg, idx) => {
+              const steps = (msg.metadata?.steps && msg.metadata.steps.length) ? msg.metadata.steps : liveSteps;
+              const hasSteps = steps && steps.length > 0;
+              return (
+                <div key={idx}>
+                  {hasSteps ? (() => {
+                    const stepsWithIndex = (steps || []).map((s, i) => ({ ...s, __idx: i }));
+                    return (
+                      <>
+                        <div className="timeline-detail-pane full">
+                          {renderTimeline(stepsWithIndex, computeActiveIndex(stepsWithIndex))}
+                        </div>
+                        <div className="timeline-roundtrack full">
+                          <RoundTrack
+                            mode={msg.metadata?.mode || conversation.mode}
+                            steps={stepsWithIndex}
+                            onSelectStep={(idx) => {
+                              if (idx === null || idx === undefined) return;
+                              // Scroll to chat content (Stage sections)
+                              setFocusedTarget({ index: idx, role: stepsWithIndex[idx]?.role, model: stepsWithIndex[idx]?.model });
+                              setPendingScrollIndex(idx);
+                              // ensure prompts expanded for that step if present
+                              setExpandedPrompts((prev) => ({ ...prev, [idx]: true }));
+                            }}
+                          />
+                        </div>
+                      </>
+                    );
+                  })() : null}
+                </div>
+              );
+            })}
+
+        {isLoading && liveSteps.length > 0 && (
+          <div>
+            {renderTimeline(liveSteps, computeActiveIndex(liveSteps))}
           </div>
         )}
 

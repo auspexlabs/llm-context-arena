@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.2.0 - LLM Context Arena rebrand + multi-mode orchestration
+
+### Breaking Changes
+- Renamed project from "LLM Council" to "LLM Context Arena"
+- `backend/council.py` → `backend/arena.py`
+- `COUNCIL_MODELS` config → `ARENA_MODELS` (backwards compat alias available)
+- Settings key `council_models` → `arena_models` (auto-migrated on load)
+
+### New Features
+- **Multi-mode orchestration**: 6 arena modes (council, round_robin, fight, stacks, complex_iterative, complex_questioning)
+- **MODE_RUNNERS registry**: Extensible pattern for adding new orchestration modes
+- **Context budgeting**: Per-model token limits with chairman summarization for long contexts
+- **Directive system**: @norag, @summarize, @tokenbudget, @cite directives in prompts
+- **Git-based indexing**: Reindex from local git repository with configurable globs
+- **Mode timeline UI**: Visual timeline of mode execution steps
+- **Progress callbacks**: SSE streaming with step-by-step progress updates
+
+### Improvements
+- Settings panel for runtime model configuration
+- Light/dark theme support
+- Mode badges and descriptions in UI
+- Breadcrumb trail for mode execution progress
+
 ## v0.1.0 - Initial RAG + manual context release
 - Local LM Studio retrieval: embed with `text-embedding-nomic-embed-text-v1.5`, rerank with `text-embedding-bge-reranker-large`, neighbor expansion, and configurable caps.
 - Manual context controls: repo tree picker, `@file:` / `@token` directives, and manual context that bypasses RAG when present.
