@@ -1,0 +1,132 @@
+[
+  {
+    "id": "q01",
+    "query": "where is authenticate_user defined",
+    "relevant": [{"source": "auth/login.py", "symbol": "authenticate_user"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q02",
+    "query": "where is verify_token defined",
+    "relevant": [{"source": "auth/login.py", "symbol": "verify_token"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q03",
+    "query": "who calls verify_token",
+    "relevant": [
+      {"source": "auth/middleware.py", "symbol": "auth_middleware"},
+      {"source": "auth/login.py", "symbol": "verify_token"}
+    ],
+    "category": "cross_file"
+  },
+  {
+    "id": "q04",
+    "query": "trace call chain for authenticate_user",
+    "relevant": [
+      {"source": "auth/login.py", "symbol": "authenticate_user"},
+      {"source": "services/user_service.py", "symbol": "UserService.login"},
+      {"source": "main.py", "symbol": "bootstrap"}
+    ],
+    "category": "trace"
+  },
+  {
+    "id": "q05",
+    "query": "UserService login implementation",
+    "relevant": [{"source": "services/user_service.py", "symbol": "UserService.login"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q06",
+    "query": "how does auth_middleware work",
+    "relevant": [{"source": "auth/middleware.py", "symbol": "auth_middleware"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q07",
+    "query": "register_routes handler",
+    "relevant": [{"source": "api/routes.py", "symbol": "register_routes"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q08",
+    "query": "queue consumer for background tasks",
+    "relevant": [
+      {"source": "queue/worker.py", "symbol": "process_tasks"},
+      {"source": "queue/worker.py", "symbol": "handle_task"}
+    ],
+    "category": "semantic"
+  },
+  {
+    "id": "q09",
+    "query": "where is enqueue_task",
+    "relevant": [{"source": "queue/worker.py", "symbol": "enqueue_task"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q10",
+    "query": "application bootstrap entrypoint",
+    "relevant": [{"source": "main.py", "symbol": "bootstrap"}],
+    "category": "semantic"
+  },
+  {
+    "id": "q11",
+    "query": "session token issuance",
+    "relevant": [{"source": "auth/login.py", "symbol": "issue_session_token"}],
+    "category": "semantic"
+  },
+  {
+    "id": "q12",
+    "query": "get_user persistence lookup",
+    "relevant": [{"source": "services/user_service.py", "symbol": "UserService.get_user"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q13",
+    "query": "fetch_user API endpoint",
+    "relevant": [{"source": "api/routes.py", "symbol": "fetch_user"}],
+    "category": "symbol_lookup"
+  },
+  {
+    "id": "q14",
+    "query": "permission check before user fetch",
+    "relevant": [
+      {"source": "api/routes.py", "symbol": "fetch_user"},
+      {"source": "auth/middleware.py", "symbol": "auth_middleware"}
+    ],
+    "category": "cross_file"
+  },
+  {
+    "id": "q15",
+    "query": "how does login authentication flow work",
+    "relevant": [
+      {"source": "auth/login.py", "symbol": "authenticate_user"},
+      {"source": "services/user_service.py", "symbol": "UserService.login"}
+    ],
+    "category": "semantic"
+  },
+  {
+    "id": "q16",
+    "query": "issue_session_token caller",
+    "relevant": [
+      {"source": "auth/login.py", "symbol": "issue_session_token"},
+      {"source": "auth/login.py", "symbol": "authenticate_user"}
+    ],
+    "category": "cross_file"
+  },
+  {
+    "id": "q17",
+    "query": "task_queue put handoff",
+    "relevant": [{"source": "queue/worker.py", "symbol": "enqueue_task"}],
+    "category": "pattern"
+  },
+  {
+    "id": "q18",
+    "query": "route registration with user service",
+    "relevant": [
+      {"source": "api/routes.py", "symbol": "register_routes"},
+      {"source": "services/user_service.py", "symbol": "UserService"}
+    ],
+    "category": "semantic"
+  }
+]
