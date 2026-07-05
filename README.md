@@ -1,12 +1,37 @@
 # LLM Context Arena
 
-![LLM Context Arena](header.jpg)
+**Multi-model deliberation with code context — a fork of Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council).**
 
-**Multi-model consensus through configurable deliberation strategies.**
+All credit to [Karpathy](https://twitter.com/karpathy) for the original idea: put several frontier models in a room, let them answer independently, review each other anonymously, and have a chairman synthesize a final answer. That three-stage council is elegant and we kept it as the default mode.
 
-Why ask one LLM when you can make them debate, review, and synthesize? Context Arena routes your query through multiple frontier models with different orchestration modes - from simple peer review to adversarial debates to Socratic questioning chains.
+This fork extends that foundation into an **arena** — same local-first vibe-coded spirit, more ways to make models argue, and machinery for grounding answers in your codebase.
 
-This fork builds on Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council) with local RAG, context budgeting, and 6 distinct arena modes for getting models to agree (or productively disagree).
+## What changed in this fork
+
+| Area | Addition |
+|------|----------|
+| **Modes** | Six orchestration strategies: Council, Round Robin, Fight, Stacks, Complex Iterative, Complex Questioning |
+| **RAG** | Per-conversation repo indexing (ZIP or git snapshot) via LM Studio embeddings + FAISS *(being upgraded — see P1 below)* |
+| **Context** | Per-model token budgets, chairman summarization when context is huge, manual file picker |
+| **Directives** | Inline `@norag`, `@summarize`, `@tokenbudget`, `@cite`, `@lastchair`, and more |
+| **UI** | Mode timeline, context panel, repo dropzone, streaming progress, light/dark theme |
+
+**Roadmap:** Real code-aware RAG (AST chunking, proper reranking) is next. Bicameral Mind mode and cost tracking are planned.
+
+**Repo:** [github.com/auspexlabs/llm-context-arena](https://github.com/auspexlabs/llm-context-arena) (private)
+
+---
+
+## Quick Start
+
+```bash
+uv sync
+cd frontend && npm install && cd ..
+cp .env.example .env   # add OPENROUTER_API_KEY
+./start.sh             # backend :8001, frontend :5173
+```
+
+For RAG, run LM Studio with embedding models — see [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md).
 
 ---
 
@@ -137,7 +162,7 @@ Query ──► ALL ANSWER ──► ALL QUESTION OWN ANSWERS ──► Chairman
 
 ---
 
-## What We Added
+## What We Added (detail)
 
 Built on top of Karpathy's original council:
 
@@ -176,23 +201,24 @@ Control behavior inline with your query:
 
 ---
 
-## Quick Start
+## Configuration
 
-### 1. Install Dependencies
+### Arena Models
 
-**Backend:**
-```bash
-uv sync
+Edit `backend/config.py` or use the settings panel:
+
+```python
+ARENA_MODELS = [
+    "openai/gpt-5.1",
+    "google/gemini-3-pro-preview",
+    "anthropic/claude-sonnet-4.5",
+    "x-ai/grok-4",
+]
+
+CHAIRMAN_MODEL = "openai/gpt-5.1"
 ```
 
-**Frontend:**
-```bash
-cd frontend && npm install && cd ..
-```
-
-### 2. Configure Environment
-
-Create `.env` in project root:
+### Environment
 
 ```bash
 # Required
@@ -210,47 +236,7 @@ RERANK_TOP_K=20
 CONTEXT_CHUNK_CAP=60
 ```
 
-### 3. Start LM Studio (for RAG)
-
-Load these models in LM Studio with API server enabled on port 1234:
-- `text-embedding-nomic-embed-text-v1.5` (embeddings)
-- `text-embedding-bge-reranker-large` (reranking)
-
-See [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md) for detailed setup.
-
-### 4. Run
-
-```bash
-./start.sh
-# Or manually:
-# Terminal 1: uv run python -m backend.main
-# Terminal 2: cd frontend && npm run dev
-```
-
-Open http://localhost:5173
-
----
-
-## Configuration
-
-### Arena Models
-
-Edit `backend/config.py`:
-
-```python
-ARENA_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
-]
-
-CHAIRMAN_MODEL = "openai/gpt-5.1"
-```
-
 ### Context Limits
-
-Per-model token budgets (override via env):
 
 | Model | Default Context | Env Override |
 |-------|-----------------|--------------|
@@ -296,14 +282,6 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 
 ## Acknowledgments
 
-This project stands on the shoulders of a giant.
+**Massive thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for [llm-council](https://github.com/karpathy/llm-council). The original 3-stage council (answer → anonymous peer review → chairman synthesis) is the spine of this project.
 
-**Massive thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for creating [llm-council](https://github.com/karpathy/llm-council) and open-sourcing the concept. The original 3-stage council (answer → anonymous peer review → chairman synthesis) is elegant and effective. We've just bolted on more ways to make models argue with each other.
-
-Karpathy's "vibe code" philosophy - minimal, readable, hackable - is alive in this fork. This is still a Saturday hack project. Code is ephemeral, ask your LLM to change it however you like.
-
----
-
-## Vibe Code Alert
-
-This project was extended in the same spirit as the original: vibe coded as a fun hack to explore multi-model consensus strategies. It's useful, it's interesting, it's not enterprise software. Fork it, break it, make it yours.
+Karpathy's vibe code philosophy — minimal, readable, hackable — is alive here. This is still a Saturday hack project. Fork it, break it, make it yours.
