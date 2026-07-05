@@ -1,5 +1,7 @@
 # LLM Context Arena
 
+> **Build in public** — development happens on [`auspexlabs/llm-context-arena`](https://github.com/auspexlabs/llm-context-arena). Decisions are logged in [`docs/decision_log.md`](docs/decision_log.md).
+
 **Multi-model deliberation with code context — a fork of Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council).**
 
 All credit to [Karpathy](https://twitter.com/karpathy) for the original idea: put several frontier models in a room, let them answer independently, review each other anonymously, and have a chairman synthesize a final answer. That three-stage council is elegant and we kept it as the default mode.
