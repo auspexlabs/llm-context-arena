@@ -6,6 +6,13 @@ This file contains technical details, architectural decisions, and important imp
 
 LLM Context Arena is a multi-mode deliberation system where multiple LLMs collaboratively answer user questions. The system supports various orchestration modes including Council (with anonymized peer review), Fight, Stacks, Round Robin, and Complex modes.
 
+## Decision log
+
+Architecture and policy decisions are recorded in `docs/decision_log.md` — an append-only,
+[ADRLight](https://github.com/Indubitable-Industries/ADRLight)-style ledger. Record
+decisions, deferrals, and hypotheses there as you make them, following the format at the
+top of that file; append only, never rewrite past entries (status updates excepted).
+
 ## Architecture
 
 ### Backend Structure (`backend/`)

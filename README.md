@@ -16,7 +16,7 @@ This fork extends that foundation into an **arena** — same local-first vibe-co
 | **Directives** | Inline `@norag`, `@summarize`, `@tokenbudget`, `@cite`, `@lastchair`, and more |
 | **UI** | Mode timeline, context panel, repo dropzone, streaming progress, light/dark theme |
 
-**Roadmap:** Real code-aware RAG (AST chunking, proper reranking) is next. Bicameral Mind mode and cost tracking are planned.
+**Roadmap:** Real code-aware RAG (phased CodeRAG — see `docs/decision_log.md` DEC-001). Bicameral Mind mode and cost tracking are planned.
 
 **Repo:** [github.com/auspexlabs/llm-context-arena](https://github.com/auspexlabs/llm-context-arena) (private)
 
