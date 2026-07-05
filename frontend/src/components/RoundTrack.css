@@ -1,0 +1,175 @@
+.roundtrack {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.roundtrack-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #222;
+  margin-bottom: 8px;
+}
+
+.roundtrack-round {
+  margin-bottom: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #e6e6e6;
+  background: #fff;
+}
+
+.roundtrack-round-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.roundtrack-round-label {
+  font-weight: 600;
+  color: #2a2a2a;
+}
+
+.roundtrack-round-order {
+  font-size: 12px;
+  color: #666;
+}
+
+.roundtrack-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.roundtrack-step-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fdfdfd;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roundtrack-step-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #444;
+}
+
+.roundtrack-step-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  color: #555;
+  background: #eef5ff;
+  border: 1px solid #c7ddff;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.roundtrack-step-model {
+  font-weight: 700;
+}
+
+.roundtrack-step-role {
+  text-transform: lowercase;
+  color: #666;
+}
+
+.roundtrack-step-flow {
+  font-size: 12px;
+  color: #555;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.roundtrack-arrow {
+  color: #888;
+  font-weight: 700;
+}
+
+.roundtrack-step-text {
+  font-size: 13px;
+  color: #222;
+  line-height: 1.45;
+  background: #f6f6f6;
+  border: 1px solid #e6e6e6;
+  border-radius: 6px;
+  padding: 8px;
+  min-height: 40px;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.roundtrack-connector {
+  margin-top: 10px;
+  color: #666;
+  font-size: 14px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .roundtrack {
+    padding: 10px;
+  }
+  .roundtrack-steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-dark .roundtrack {
+  border-color: var(--border);
+  background: #18130f;
+}
+
+.theme-dark .roundtrack-round {
+  border-color: var(--border);
+  background: #201910;
+}
+
+.theme-dark .roundtrack-title,
+.theme-dark .roundtrack-round-label,
+.theme-dark .roundtrack-step-text,
+.theme-dark .roundtrack-step-top,
+.theme-dark .roundtrack-step-flow {
+  color: var(--text);
+}
+
+.theme-dark .roundtrack-step-card {
+  border-color: #2f3a4c;
+  background: #0f1524;
+}
+
+.theme-dark .roundtrack-round-order,
+.theme-dark .roundtrack-step-badge,
+.theme-dark .roundtrack-connector {
+  color: var(--muted);
+}
+
+.theme-dark .roundtrack-step-text {
+  background: #121012;
+  border-color: #2f3a4c;
+  color: var(--text);
+}
+
+.theme-dark .roundtrack-toggle {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: var(--text);
+}
+
+.theme-dark .roundtrack-toggle:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+}

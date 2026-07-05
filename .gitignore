@@ -16,6 +16,9 @@ wheels/
 # Data files
 data/
 
+# Per-conversation repo snapshots from ZIP/git indexing
+temp_repos/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
