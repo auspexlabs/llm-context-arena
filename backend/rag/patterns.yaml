@@ -1,0 +1,28 @@
+# Pattern-based graph edges for dynamic code (Phase 3).
+# weight: 0.0-1.0 confidence for inferred edges.
+
+queue_producer:
+  weight: 0.7
+  rules:
+    - match: '\.put\('
+      relation: queue_producer
+
+queue_consumer:
+  weight: 0.7
+  rules:
+    - match: '\.get\('
+      relation: queue_consumer
+
+multiprocessing_spawn:
+  weight: 0.8
+  rules:
+    - match: 'Process\s*\('
+      relation: spawns_process
+    - match: 'target\s*=\s*([A-Za-z_][\w]*)'
+      relation: process_target
+
+textual_handler:
+  weight: 0.75
+  rules:
+    - match: '@on\s*\('
+      relation: event_handler

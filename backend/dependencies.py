@@ -17,6 +17,8 @@ from .config import (
     OUTPUT_TOKEN_ALLOWANCE,
 )
 from .openrouter import query_model
+from .rag_lmstudio_provider import LMStudioRAGProvider, get_rag_provider
+from .rag_provider import RAGProvider
 from .storage_service import StorageService
 
 SETTINGS_PATH = Path("data/config.json")
@@ -93,6 +95,12 @@ def get_settings() -> Dict[str, Any]:
     return load_runtime_settings()
 
 
+@lru_cache()
+def get_rag_provider_dep() -> RAGProvider:
+    """Get singleton RAG provider (LM Studio CodeRAG)."""
+    return get_rag_provider()
+
+
 # -----------------------------------------------------------------------------
 # Testing Support
 # -----------------------------------------------------------------------------
@@ -102,3 +110,4 @@ def clear_caches():
     """Clear all cached dependencies (useful for testing)."""
     get_storage_service.cache_clear()
     get_budget_allocator.cache_clear()
+    get_rag_provider_dep.cache_clear()

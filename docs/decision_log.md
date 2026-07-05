@@ -95,3 +95,13 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **interventions:** Build a 15–20 query golden set from real arena conversations (auth flow, “where is X defined”, cross-file call chains). Measure recall@10 after Phase 1, then Phase 2.
 - **test matrix:** (A) bi-encoder + rerank only; (B) + entity seed; (C) + 1-hop graph; (D) ColBERT index on same chunks.
 - **results:** *(pending P1 Phase 1–2 completion)*
+
+### DEC-002: Ship CodeRAG Phases 1–3 (pre-ColBERT)
+- **date:** 2026-07-05 · **status:** accepted · **triggered_by:** `DEC-001` · **docs_updated:** `docs/decision_log.md`, `backend/rag/`, `backend/rag_lmstudio_provider.py`, `backend/rag_lmstudio.py`, `backend/rag_provider.py`, `backend/dependencies.py`, `pyproject.toml`, `tests/unit/test_*.py`, `tests/fixtures/` · **related:** `HYP-001`
+- **decision:** Implement and land **Phases 1–3** of `DEC-001` in a new `backend/rag/` package, with `LMStudioRAGProvider` as the concrete `RAGProvider` and `rag_lmstudio.py` as a thin backward-compatible facade. ColBERT / late-interaction retrieval remains **gated** on `HYP-001` golden-query metrics — not shipped in this change.
+  - **Phase 1:** Tree-sitter Python chunking (line-window fallback); `CodeChunk` metadata + `path:line_start-line_end` citations; FAISS bi-encoder retrieval; injectable `CrossEncoderReranker` (BGE via `sentence-transformers` when enabled); hybrid symbol/path seeding.
+  - **Phase 2:** `EntityIndex` (def/class → location); `CodeGraph` (NetworkX) with static reference edges; always-on 1-hop expansion; README demotion.
+  - **Phase 3:** Multi-hop `trace_expand` for trace-style queries; pattern edges from `patterns.yaml`.
+- **rationale:** Replaces character-split + cosine-on-embeddings “rerank” with syntactically aware chunks and a proper rerank stage — the 80% win per `DEC-001`. Phases 1–3 are testable without LM Studio (injectable embedder/reranker mocks). ColBERT deferred until baseline recall@10 is measured.
+- **impact:** 89 unit tests green; new deps (`tree-sitter`, `tree-sitter-python`, `networkx`, `sentence-transformers`, `pyyaml`). `main.py` still calls `rag_lmstudio` facade — `ContextEngine` wiring is a follow-up.
+- **supersedes:** pre-DEC-002 `rag_lmstudio.py` monolith implementation
