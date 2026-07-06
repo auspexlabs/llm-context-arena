@@ -101,6 +101,17 @@ def get_rag_provider_dep() -> RAGProvider:
     return get_rag_provider()
 
 
+def get_context_engine(rag_provider: RAGProvider | None = None):
+    """Build ContextEngine with injected RAG provider (default: singleton)."""
+    from .context_engine import ContextEngine
+
+    return ContextEngine(
+        query_model_fn=query_model,
+        rag_provider=rag_provider or get_rag_provider_dep(),
+        budget_allocator=get_budget_allocator(),
+    )
+
+
 # -----------------------------------------------------------------------------
 # Testing Support
 # -----------------------------------------------------------------------------

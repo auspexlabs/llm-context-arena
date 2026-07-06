@@ -15,7 +15,7 @@ import asyncio
 from fastapi import UploadFile, File
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple
 
 from . import storage
 from .arena import run_full_arena, generate_conversation_title
@@ -25,34 +25,23 @@ from .config import (
     INDEX_INCLUDE_UNTRACKED,
 )
 from .dependencies import (
+    get_context_engine,
     get_settings,
     get_storage_service,
+    get_rag_provider_dep,
     load_runtime_settings,
     save_runtime_settings,
 )
-from .openrouter import query_model
 from .storage import reset_conversation
 from .storage_service import StorageService
 from .rag_lmstudio import (
     index_repo_zip,
-    get_context,
-    _estimate_tokens,
     _iter_source_files,
     rank_paths_against_query,
     build_worktree_snapshot,
     index_repo_dir,
     _load_manifest,
 )
-
-# Import extracted modules
-from .directives import (
-    ParsedDirectives,
-    parse_directives,
-    build_directive_instructions,
-    build_mode_instructions,
-)
-from .budget import build_budgeted_prompts
-from .context_engine import CONTROL_PROMPT
 
 app = FastAPI(title="LLM Context Arena API")
 logger = logging.getLogger(__name__)
@@ -134,40 +123,6 @@ class Conversation(BaseModel):
     mode: str = "council"
 
 
-def _get_last_chair_context(conversation: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]], Optional[str]]:
-    """
-    Build a context block from the most recent chairman response.
-
-    Returns (context_block, sources, chairman_model)
-    """
-    messages = conversation.get("messages", [])
-    for msg in reversed(messages):
-        if msg.get("role") != "assistant":
-            continue
-        chair = msg.get("stage3") or {}
-        text = (chair.get("response") or "").strip()
-        if not text:
-            continue
-        model = chair.get("model") or "chairman"
-        source = {
-            "source": "previous_chairman",
-            "doc_id": "previous_chairman",
-            "chunk_index": None,
-            "score": None,
-            "content": text,
-            "lines": text.count("\n") + 1,
-            "chars": len(text),
-            "bytes": len(text.encode("utf-8", errors="ignore")),
-            "est_tokens": _estimate_tokens(text),
-            "source_type": "manual_last_chair",
-            "model": model,
-        }
-        block = "# Previous chairman response\n\n" + text
-        return block, [source], model
-
-    return "", [], None
-
-
 @app.get("/")
 async def root():
     """Health check endpoint."""
@@ -226,76 +181,37 @@ async def send_message(
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
 
-    # Raw user content as typed
     user_content_raw = request.content
+    ctx = await get_context_engine().prepare_context(
+        conversation_id=conversation_id,
+        user_input=user_content_raw,
+        mode=conversation.get("mode", "council"),
+        manual_context=request.manual_context,
+        conversation=conversation,
+        arena_models=arena_models,
+        chairman_model=chairman_model,
+    )
 
-    cleaned_content, directives = parse_directives(user_content_raw)
-    user_content = cleaned_content or user_content_raw
-
-    if directives.reset:
+    if ctx.directives.reset:
         reset_conversation(conversation_id)
         return {
             "stage1": [],
             "stage2": [],
             "stage3": {"model": "system", "response": "Conversation reset as requested."},
-            "metadata": {"directives": directives.dict(), "warnings": directives.warnings},
+            "metadata": {"directives": ctx.directives.dict(), "warnings": ctx.warnings},
             "context_sources": [],
-            "directives": directives.dict(),
-            "warnings": directives.warnings,
+            "directives": ctx.directives.dict(),
+            "warnings": ctx.warnings,
         }
 
-    # ---- Context: manual overrides, @lastchair, or RAG retrieval ----
-    manual_context = request.manual_context or []
-    context_block = ""
-    context_sources: List[Dict[str, Any]] = []
-    context_from_last_chair = False
-
-    if directives.use_last_chair:
-        context_block, context_sources, _ = _get_last_chair_context(conversation)
-        if context_block:
-            manual_context = []  # enforce chairman-only context
-            context_from_last_chair = True
-            directives.skip_rag = True  # ensure RAG is bypassed
-        else:
-            directives.warnings.append("No previous chairman response found; using normal context instead.")
-
-    if not context_block:
-        context_block, context_sources = await asyncio.to_thread(
-            get_context, conversation_id, user_content, manual_context, not directives.skip_rag
-        )
-
-    rag_used = len(manual_context) == 0 and not directives.skip_rag and not context_from_last_chair
-    if not context_block:
-        context_sources = []
-
-    instruction_text_parts = [
-        build_directive_instructions(directives),
-        build_mode_instructions(conversation.get("mode", "council")),
-    ]
-    instruction_text = "\n".join([p for p in instruction_text_parts if p])
-
-    augmented_content, per_model_prompts, context_token_map, summarize_targets = await build_budgeted_prompts(
-        user_content,
-        context_block,
-        rag_used,
-        query_model,
-        force_summarize=directives.force_summarize,
-        budget_override=directives.budget_override,
-        extra_instructions=instruction_text,
-        arena_models=arena_models,
-        chairman_model=chairman_model,
-        control_prompt=CONTROL_PROMPT,
-    )
-    logger.info(
-        "Context appended (convo=%s user_len=%d ctx_chars=%d budgeted=%s skip_rag=%s force_sum=%s preview='%s')",
-        conversation_id,
-        len(user_content),
-        len(context_block),
-        bool(per_model_prompts),
-        directives.skip_rag,
-        directives.force_summarize,
-        context_block.replace("\n", " ")[:200] if context_block else "",
-    )
+    user_content = ctx.clean_query
+    directives = ctx.directives
+    context_block = ctx.context_block
+    context_sources = ctx.context_sources
+    context_from_last_chair = ctx.context_from_last_chair
+    augmented_content = ctx.base_prompt
+    per_model_prompts = ctx.per_model_prompts
+    context_token_map = ctx.context_token_map
 
     # Add user message (store original text, not augmented)
     storage_svc.add_user_message(conversation_id, user_content)
@@ -305,7 +221,7 @@ async def send_message(
         title = await generate_conversation_title(user_content)
         storage_svc.update_conversation_title(conversation_id, title)
 
-    context_tokens = _estimate_tokens(context_block) if context_block else 0
+    context_tokens = get_rag_provider_dep().estimate_tokens(context_block) if context_block else 0
 
     # Run the arena process on the augmented content
     stage1_results, stage2_results, stage3_result, metadata = await run_full_arena(
@@ -376,76 +292,37 @@ async def send_message_stream(
 
     async def event_generator():
         try:
-            # Raw user content as typed
             user_content_raw = request.content
-            cleaned_content, directives = parse_directives(user_content_raw)
-            user_content = cleaned_content or user_content_raw
 
-            # Refresh settings per-request in case they changed
             settings_local = load_runtime_settings()
             arena_models_local = settings_local.get("arena_models", ARENA_MODELS)
             chairman_model_local = settings_local.get("chairman_model", CHAIRMAN_MODEL)
 
-            if directives.reset:
+            ctx = await get_context_engine().prepare_context(
+                conversation_id=conversation_id,
+                user_input=user_content_raw,
+                mode=conversation.get("mode", "council"),
+                manual_context=request.manual_context,
+                conversation=conversation,
+                arena_models=arena_models_local,
+                chairman_model=chairman_model_local,
+            )
+
+            if ctx.directives.reset:
                 reset_conversation(conversation_id)
                 yield "data: " + json.dumps({"type": "reset", "message": "Conversation reset as requested."}) + "\n\n"
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
                 return
 
-            manual_context = request.manual_context or []
-
-            # ---- Context: manual overrides, @lastchair, or RAG retrieval ----
-            context_block = ""
-            context_sources: List[Dict[str, Any]] = []
-            context_from_last_chair = False
-
-            if directives.use_last_chair:
-                context_block, context_sources, _ = _get_last_chair_context(conversation)
-                if context_block:
-                    manual_context = []  # enforce chairman-only context
-                    context_from_last_chair = True
-                    directives.skip_rag = True
-                else:
-                    directives.warnings.append("No previous chairman response found; using normal context instead.")
-
-            if not context_block:
-                context_block, context_sources = await asyncio.to_thread(
-                    get_context, conversation_id, user_content, manual_context, not directives.skip_rag
-                )
-
-            rag_used = len(manual_context) == 0 and not directives.skip_rag and not context_from_last_chair
-
-            if not context_block:
-                context_sources = []
-
-            instruction_text_parts = [
-                build_directive_instructions(directives),
-                build_mode_instructions(conversation.get("mode", "council")),
-            ]
-            instruction_text = "\n".join([p for p in instruction_text_parts if p])
-
-            augmented_content, per_model_prompts, context_token_map, summarize_targets = await build_budgeted_prompts(
-                user_content,
-                context_block,
-                rag_used,
-                query_model,
-                force_summarize=directives.force_summarize,
-                budget_override=directives.budget_override,
-                extra_instructions=instruction_text,
-                arena_models=arena_models_local,
-                chairman_model=chairman_model_local,
-                control_prompt=CONTROL_PROMPT,
-            )
-            logger.info(
-                "Context appended (stream) (convo=%s user_len=%d ctx_chars=%d budgeted=%s skip_rag=%s force_sum=%s preview='%s')",
-                conversation_id,
-                len(user_content),
-                len(context_block),
-                bool(per_model_prompts),
-                directives.skip_rag,
-                directives.force_summarize,
-                context_block.replace("\n", " ")[:200] if context_block else "",
-            )
+            user_content = ctx.clean_query
+            directives = ctx.directives
+            context_block = ctx.context_block
+            context_sources = ctx.context_sources
+            context_from_last_chair = ctx.context_from_last_chair
+            augmented_content = ctx.base_prompt
+            per_model_prompts = ctx.per_model_prompts
+            context_token_map = ctx.context_token_map
+            summarize_targets = ctx.summarize_targets
 
             # Emit context info early so the UI can display it
             if context_sources:
@@ -480,7 +357,7 @@ async def send_message_stream(
                     arena_models=arena_models_local,
                     chairman_model=chairman_model_local,
                     iterations=directives.iterations_override,
-                    context_tokens=_estimate_tokens(context_block) if context_block else 0,
+                    context_tokens=get_rag_provider_dep().estimate_tokens(context_block) if context_block else 0,
                     context_tokens_map=context_token_map,
                     progress_cb=_progress_cb,
                 )
