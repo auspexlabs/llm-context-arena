@@ -133,3 +133,33 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **rationale:** Hash ColBERT proved the MaxSim pipeline and HYP-001 ablations but lacks semantic generalization. PyLate gives production ColBERTv2 with per-index persistence without per-codebase training. Rejected: RAGatouille (broken langchain deps in our stack); fine-tuning embeddings per repo (unnecessary for arena use).
 - **impact:** New deps `pylate`, `voyager`. Config: `COLBERT_MODEL`, `COLBERT_DEVICE`, `COLBERT_LEARNED`. Score normalization before cross-encoder rerank blend. Real-embedding golden-set re-run still open.
 - **supersedes:** hash-only default in `DEC-004` implementation note
+
+### DEC-006: Multi-language AST chunking via tree-sitter registry (cheap grammars only)
+- **date:** 2026-07-06 · **status:** accepted · **triggered_by:** DEC-001 Phase 1 gap; user lang priority list · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-001`, `DEF-002`
+- **decision:** Extend the chunker beyond Python using **drop-in `tree-sitter-*` PyPI wheels** and a **single shared walker** that maps per-language node types → `CodeChunk` (same fields as today). **Ship:** Rust (`.rs`), JavaScript (`.js`/`.mjs`/`.cjs`), TypeScript + TSX (`.ts`/`.tsx` — covers Node and React), Go (`.go`). **Gate:** Ruby (`.rb`) — add only after the registry pattern is proven and `tree-sitter-ruby` fits without bespoke plumbing. **Keep** line-window fallback for unsupported extensions and parse failures. **Do not** add languages that lack an importable grammar wheel or require a materially different chunk pipeline (see `DEF-002`).
+- **rationale:** Polyglot repos are common in arena use (Rust services, Go backends, React frontends). Tree-sitter grammars share the same `Language`/`Parser` API; only node-type names differ — a small registry avoids per-lang modules. React needs no separate parser if TSX is covered by `tree-sitter-typescript`. Rejected: Java/C#/Haskell custom extractors; per-language reference parsers beyond lightweight regex on chunk bodies.
+- **impact:** New optional deps (`tree-sitter-rust`, `tree-sitter-javascript`, `tree-sitter-typescript`, `tree-sitter-go`; `tree-sitter-ruby` later). Extend `SOURCE_EXTENSIONS`. Fixture repos + unit tests per language. Entity/graph reference extraction stays best-effort (Python-quality refs not required day one for new langs).
+
+### DEF-002: Defer languages without drop-in tree-sitter grammar wheels
+- **date:** 2026-07-06 · **status:** active · **triggered_by:** `DEC-006` · **docs_updated:** `docs/decision_log.md`
+- **decision:** Do **not** add chunkers for Java, Kotlin, C/C++, C#, PHP, Swift, etc. until a `tree-sitter-*` wheel exists **and** node types map into the shared registry without a separate output format. Unsupported files continue to use line-window chunks.
+- **rationale:** User constraint: cheap to add, no heavy plumbing when AST outputs diverge or parsers aren't importable. Custom grammar builds (.so compilation) fight the arena's “drop a zip” model.
+- **revisit_when:** A language has a maintained PyPI grammar wheel and ≤~30 lines of registry config in the shared walker.
+
+### DEC-007: Single context path via ContextEngine + RAGProvider DI
+- **date:** 2026-07-06 · **status:** accepted · **triggered_by:** `DEC-001` Phase 1 open item; `DEC-002` impact note · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-001`, `DEC-002`
+- **decision:** Route **all** arena message handling (sync + SSE) through `ContextEngine` for directive parse → retrieval → budget → prompt assembly. `ContextEngine` must call `RAGProvider` via `dependencies.get_rag_provider_dep()`, not `rag_lmstudio` facade imports. Keep `rag_lmstudio.py` as backward-compatible shim for CLI/scripts only until migrated.
+- **rationale:** Two context paths (`main.py` → facade, `ContextEngine` → facade) risk drift now that CodeRAG + ColBERT live in `LMStudioRAGProvider`. One path ensures retrieval config, citations, and budget see the same chunks.
+- **impact:** Refactor `backend/main.py`, `backend/context_engine.py`; tests for ContextEngine with injectable `RAGProvider`.
+
+### DEC-008: Manifest-based delta reindex (file-granular)
+- **date:** 2026-07-06 · **status:** accepted · **triggered_by:** `DEC-001` freshness clause; full rebuild cost with ColBERT encode · **docs_updated:** `docs/decision_log.md` · **related:** `DEF-001`, `DEC-005`
+- **decision:** On reindex/upload, compare `index_manifest.json` file entries (path, mtime, bytes) against the current snapshot. **Re-chunk and rebuild sidecars** (entity index, graph) only for added/changed/removed files. **v1 embedding policy:** if the delta is non-empty, rebuild **FAISS + ColBERT** indexes for the conversation (full re-encode of all chunks — simple, correct); optimize per-file embedding upsert in a follow-up only if rebuild latency hurts. Expose “changed since last index” in manifest API for UI/CLI.
+- **rationale:** Manifest already records per-file metadata but `index_directory()` always full-scans. File-granular chunk merge reduces graph/entity work immediately; embedding upsert for Voyager/FAISS is non-trivial — ship correct full re-embed on delta first, optimize later.
+- **impact:** `indexer.py` delta path; provider reindex endpoints; tests with fixture manifest diffs.
+
+### DEC-009: Standardize on local BGE cross-encoder rerank (document LM Studio rerank as unused)
+- **date:** 2026-07-06 · **status:** accepted · **triggered_by:** `LMSTUDIO_RERANK_MODEL` config drift · **docs_updated:** `docs/decision_log.md`, `RAG_LMSTUDIO.md` (when updated) · **related:** `DEC-001`
+- **decision:** **Rerank stage uses `sentence-transformers` BGE** (`BAAI/bge-reranker-base`, configurable). Treat `LMSTUDIO_RERANK_MODEL` as **deprecated/unwired** — remove from docs or map to a future opt-in. Do not run rerank through LM Studio unless a later DEC explicitly adds it.
+- **rationale:** Rerank is query-time batch scoring; local BGE avoids a second LM Studio round-trip and matches DEC-001 intent (“proper cross-encoder”). LM Studio env var was legacy from pre-CodeRAG cosine hack.
+- **impact:** Align `rerank.py` model name with config; README/RAG_LMSTUDIO cleanup task.
