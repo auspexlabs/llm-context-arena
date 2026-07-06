@@ -13,6 +13,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
 from .chunker import iter_source_files
+from .manifest import files_meta_list, scan_repo_files
 from .colbert import SemanticIndex, build_semantic_index, clear_semantic_index
 from .entity_index import EntityIndex
 from .graph import CodeGraph
@@ -102,17 +103,7 @@ class ConversationStore:
             except Exception:
                 manifest = {}
 
-        files_meta = []
-        for src in iter_source_files(root_dir):
-            try:
-                stat = src.stat()
-                files_meta.append({
-                    "path": str(src.relative_to(root_dir)),
-                    "bytes": stat.st_size,
-                    "mtime": stat.st_mtime,
-                })
-            except OSError:
-                continue
+        files_meta = files_meta_list(scan_repo_files(root_dir))
 
         manifest[self.conversation_id] = {
             "root": str(root_dir),
@@ -123,6 +114,20 @@ class ConversationStore:
         }
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    def load_chunks_only(self) -> bool:
+        """Load chunk pickle without requiring FAISS (for delta merge)."""
+        if not self._chunks_path().exists():
+            return False
+        try:
+            with open(self._chunks_path(), "rb") as f:
+                payload = pickle.load(f)
+            self.chunks = payload.get("chunks", {})
+            self.chunk_order = payload.get("order", list(self.chunks.keys()))
+            return bool(self.chunks)
+        except Exception:
+            logger.exception("Failed to load chunks for %s", self.conversation_id)
+            return False
 
     def load(self) -> bool:
         faiss_path = self._faiss_path()

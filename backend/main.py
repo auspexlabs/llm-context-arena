@@ -678,9 +678,19 @@ async def reindex_git(conversation_id: str, include_untracked: bool | None = Non
 
 
 @app.get("/api/index_manifest")
-async def index_manifest():
-    """Return the current index manifest (per conversation)."""
-    return _load_manifest()
+async def index_manifest(conversation_id: str | None = None):
+    """Return index manifest with per-conversation 'changed since last index' deltas."""
+    provider = get_rag_provider_dep()
+    if conversation_id:
+        manifest = _load_manifest()
+        entry = manifest.get(conversation_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="Conversation not indexed")
+        return {
+            **entry,
+            "changed_since_index": provider.compute_index_delta(conversation_id),
+        }
+    return provider.get_manifest_with_deltas()
 
 
 @app.get("/api/settings")

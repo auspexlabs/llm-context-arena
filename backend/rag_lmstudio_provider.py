@@ -28,6 +28,7 @@ from .config import (
     RETRIEVE_CANDIDATES,
 )
 from .rag.chunker import SKIP_DIR_NAMES, iter_source_files
+from .rag.manifest import diff_manifest, scan_repo_files
 from .rag.format import build_manual_context, estimate_tokens
 from .rag.indexer import index_directory
 from .rag.rerank import CrossEncoderReranker
@@ -275,6 +276,50 @@ class LMStudioRAGProvider(RAGProvider):
 
     def get_manifest(self) -> Dict[str, Any]:
         return _load_manifest()
+
+    def compute_index_delta(self, conversation_id: str) -> Dict[str, Any]:
+        """Compare on-disk repo against last indexed manifest for a conversation."""
+        manifest = _load_manifest()
+        entry = manifest.get(conversation_id)
+        if not entry:
+            return {"has_index": False, "has_changes": False}
+
+        root_str = entry.get("root")
+        if not root_str:
+            return {"has_index": True, "has_changes": False, "root_missing": True}
+
+        root = Path(root_str)
+        if not root.is_dir():
+            return {
+                "has_index": True,
+                "has_changes": False,
+                "root_missing": True,
+                "root": root_str,
+            }
+
+        current = scan_repo_files(root)
+        delta = diff_manifest(entry.get("files"), current)
+        payload = delta.to_dict()
+        payload.update({
+            "has_index": True,
+            "root_missing": False,
+            "root": root_str,
+            "indexed_at": entry.get("indexed_at"),
+            "file_count": entry.get("file_count"),
+            "chunk_count": entry.get("chunk_count"),
+        })
+        return payload
+
+    def get_manifest_with_deltas(self) -> Dict[str, Any]:
+        """Return manifest entries enriched with per-conversation delta status."""
+        manifest = _load_manifest()
+        enriched: Dict[str, Any] = {}
+        for conversation_id, entry in manifest.items():
+            enriched[conversation_id] = {
+                **entry,
+                "changed_since_index": self.compute_index_delta(conversation_id),
+            }
+        return enriched
 
     def iter_source_files(self, root: Path) -> List[Path]:
         return iter_source_files(root)
