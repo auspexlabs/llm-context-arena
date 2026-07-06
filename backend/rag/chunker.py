@@ -170,14 +170,30 @@ def _extract_ast_chunks(rel_path: str, text: str, spec: LanguageSpec) -> List[Co
     chunks: List[CodeChunk] = []
     seen_spans: set[Tuple[int, int]] = set()
 
-    def add_chunk(node, chunk_type: str, symbol: Optional[str]):
+    def add_chunk(
+        node,
+        chunk_type: str,
+        symbol: Optional[str],
+        parent_id: Optional[str] = None,
+        parent_content: Optional[str] = None,
+    ) -> CodeChunk:
         span = (node.start_byte, node.end_byte)
         if span in seen_spans:
-            return
+            return None  # type: ignore[return-value]
         seen_spans.add(span)
-        chunks.append(_chunk_from_node(rel_path, source, node, chunk_type, symbol, spec.language))
+        chunk = _chunk_from_node(rel_path, source, node, chunk_type, symbol, spec.language)
+        if parent_id:
+            chunk.parent_id = parent_id
+            chunk.parent_content = parent_content or chunk.parent_content
+        chunks.append(chunk)
+        return chunk
 
-    def walk(node, class_name: Optional[str] = None):
+    def walk(
+        node,
+        class_name: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        parent_content: Optional[str] = None,
+    ):
         ntype = node.type
 
         if ntype == "method_declaration" and spec.language == "go":
@@ -193,21 +209,31 @@ def _extract_ast_chunks(rel_path: str, text: str, spec: LanguageSpec) -> List[Co
             if symbol and class_name:
                 symbol = f"{class_name}.{symbol}"
             role = "method" if class_name else "function"
-            add_chunk(node, role, symbol)
+            add_chunk(
+                node,
+                role,
+                symbol,
+                parent_id=parent_id if class_name else None,
+                parent_content=parent_content if class_name else None,
+            )
             return
 
         if ntype in spec.class_nodes:
             symbol = _symbol_from_node(source, node)
-            add_chunk(node, "class", symbol)
+            class_chunk = add_chunk(node, "class", symbol)
+            class_id = class_chunk.chunk_id if class_chunk else None
+            class_body = class_chunk.content if class_chunk else None
             for child in node.children:
-                walk(child, symbol)
+                walk(child, symbol, class_id, class_body)
             return
 
         if ntype in spec.interface_nodes:
             symbol = _symbol_from_node(source, node)
-            add_chunk(node, "class", symbol)
+            class_chunk = add_chunk(node, "class", symbol)
+            class_id = class_chunk.chunk_id if class_chunk else None
+            class_body = class_chunk.content if class_chunk else None
             for child in node.children:
-                walk(child, symbol)
+                walk(child, symbol, class_id, class_body)
             return
 
         if ntype in spec.type_nodes:
@@ -229,7 +255,7 @@ def _extract_ast_chunks(rel_path: str, text: str, spec: LanguageSpec) -> List[Co
             return
 
         for child in node.children:
-            walk(child, class_name)
+            walk(child, class_name, parent_id, parent_content)
 
     walk(root)
 

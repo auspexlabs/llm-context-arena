@@ -17,6 +17,16 @@ class TestChunkFile:
         assert "Widget" in symbols
         assert any("Widget.spin" in (s or "") for s in symbols)
 
+    def test_method_chunks_link_to_parent_class(self):
+        chunks = chunk_file(FIXTURES / "sample_module.py", FIXTURES)
+        by_symbol = {c.symbol: c for c in chunks if c.symbol}
+        widget = by_symbol.get("Widget")
+        method = next((c for c in chunks if (c.symbol or "").endswith("spin")), None)
+        assert widget is not None
+        assert method is not None
+        assert method.parent_id == widget.chunk_id
+        assert method.parent_content == widget.content
+
     def test_chunks_have_line_numbers(self):
         path = FIXTURES / "sample_module.py"
         chunks = chunk_file(path, FIXTURES)
