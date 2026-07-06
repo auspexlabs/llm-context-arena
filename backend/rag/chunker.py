@@ -7,13 +7,17 @@ import uuid
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from .lang_registry import LanguageSpec, spec_for_suffix
 from .types import CodeChunk
 
 SKIP_DIR_NAMES = {
     ".git", ".idea", ".vscode", "__pycache__", "node_modules", ".venv", "venv", "dist", "build",
 }
 
-SOURCE_EXTENSIONS = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".ipynb"}
+SOURCE_EXTENSIONS = {
+    ".py", ".rs", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".go",
+    ".md", ".txt", ".json", ".yaml", ".yml", ".ipynb",
+}
 
 MAX_FILE_BYTES = 500_000
 LINE_WINDOW = 80
@@ -80,6 +84,7 @@ def _chunk_from_node(
     node,
     chunk_type: str,
     symbol: Optional[str],
+    language: str,
     parent_body: Optional[str] = None,
 ) -> CodeChunk:
     content = _node_text(source, node)
@@ -97,20 +102,67 @@ def _chunk_from_node(
         line_end=line_end,
         chunk_type=chunk_type,
         symbol=symbol,
-        language="python",
+        language=language,
         parent_content=parent_body or content,
         index_text=index_text[:4000],
     )
 
 
-def _extract_python_chunks(rel_path: str, text: str) -> List[CodeChunk]:
-    try:
-        import tree_sitter_python as tspython
-        from tree_sitter import Language, Parser
-    except ImportError:
-        return _line_window_chunks(rel_path, text, chunk_type="module", language="python")
+def _symbol_from_node(source: bytes, node) -> Optional[str]:
+    name_node = node.child_by_field_name("name")
+    if name_node is not None:
+        return _node_text(source, name_node)
 
-    parser = Parser(Language(tspython.language()))
+    for child in node.children:
+        if child.type in {"identifier", "type_identifier", "property_identifier", "field_identifier"}:
+            text = _node_text(source, child)
+            if text and text not in {"func", "fn", "impl", "struct", "type", "interface", "class"}:
+                return text
+    return None
+
+
+def _go_receiver_type(source: bytes, node) -> Optional[str]:
+    for child in node.children:
+        if child.type != "parameter_list":
+            continue
+        for param in child.children:
+            if param.type != "parameter_declaration":
+                continue
+            type_node = param.child_by_field_name("type")
+            if type_node is not None:
+                return _node_text(source, type_node)
+    return None
+
+
+def _go_type_name(source: bytes, node) -> Optional[str]:
+    for child in node.children:
+        if child.type == "type_spec":
+            id_node = child.child_by_field_name("name")
+            if id_node is not None:
+                return _node_text(source, id_node)
+        if child.type in {"type_identifier", "identifier"}:
+            return _node_text(source, child)
+    return _symbol_from_node(source, node)
+
+
+def _rust_impl_type(source: bytes, node) -> Optional[str]:
+    for child in node.children:
+        if child.type == "type_identifier":
+            return _node_text(source, child)
+    return None
+
+
+def _extract_ast_chunks(rel_path: str, text: str, spec: LanguageSpec) -> List[CodeChunk]:
+    try:
+        from tree_sitter import Parser
+    except ImportError:
+        return _line_window_chunks(rel_path, text, chunk_type="module", language=spec.language)
+
+    try:
+        parser = Parser(spec.load_language())
+    except Exception:
+        return _line_window_chunks(rel_path, text, chunk_type="module", language=spec.language)
+
     source = text.encode("utf-8")
     tree = parser.parse(source)
     root = tree.root_node
@@ -118,35 +170,78 @@ def _extract_python_chunks(rel_path: str, text: str) -> List[CodeChunk]:
     chunks: List[CodeChunk] = []
     seen_spans: set[Tuple[int, int]] = set()
 
+    def add_chunk(node, chunk_type: str, symbol: Optional[str]):
+        span = (node.start_byte, node.end_byte)
+        if span in seen_spans:
+            return
+        seen_spans.add(span)
+        chunks.append(_chunk_from_node(rel_path, source, node, chunk_type, symbol, spec.language))
+
     def walk(node, class_name: Optional[str] = None):
         ntype = node.type
-        if ntype in {"function_definition", "async_function_definition"}:
-            name_node = node.child_by_field_name("name")
-            symbol = _node_text(source, name_node) if name_node else None
+
+        if ntype == "method_declaration" and spec.language == "go":
+            receiver = _go_receiver_type(source, node)
+            symbol = _symbol_from_node(source, node)
+            if receiver and symbol:
+                symbol = f"{receiver}.{symbol}"
+            add_chunk(node, "method", symbol)
+            return
+
+        if ntype in spec.function_nodes:
+            symbol = _symbol_from_node(source, node)
             if symbol and class_name:
                 symbol = f"{class_name}.{symbol}"
-            span = (node.start_byte, node.end_byte)
-            if span not in seen_spans:
-                seen_spans.add(span)
-                chunks.append(_chunk_from_node(rel_path, source, node, "method" if class_name else "function", symbol))
-        elif ntype == "class_definition":
-            name_node = node.child_by_field_name("name")
-            class_symbol = _node_text(source, name_node) if name_node else None
-            span = (node.start_byte, node.end_byte)
-            if span not in seen_spans:
-                seen_spans.add(span)
-                chunks.append(_chunk_from_node(rel_path, source, node, "class", class_symbol))
-            for child in node.children:
-                walk(child, class_symbol)
+            role = "method" if class_name else "function"
+            add_chunk(node, role, symbol)
             return
+
+        if ntype in spec.class_nodes:
+            symbol = _symbol_from_node(source, node)
+            add_chunk(node, "class", symbol)
+            for child in node.children:
+                walk(child, symbol)
+            return
+
+        if ntype in spec.interface_nodes:
+            symbol = _symbol_from_node(source, node)
+            add_chunk(node, "class", symbol)
+            for child in node.children:
+                walk(child, symbol)
+            return
+
+        if ntype in spec.type_nodes:
+            symbol = _go_type_name(source, node) if spec.language == "go" else _symbol_from_node(source, node)
+            add_chunk(node, "class", symbol)
+            if spec.language != "go":
+                for child in node.children:
+                    walk(child, symbol)
+            return
+
+        if ntype in spec.impl_nodes:
+            impl_type = _rust_impl_type(source, node)
+            for child in node.children:
+                if child.type == "declaration_list":
+                    for decl in child.children:
+                        walk(decl, impl_type)
+                else:
+                    walk(child, impl_type)
+            return
+
         for child in node.children:
             walk(child, class_name)
 
     walk(root)
 
     if not chunks:
-        return _line_window_chunks(rel_path, text, chunk_type="module", language="python")
+        return _line_window_chunks(rel_path, text, chunk_type="module", language=spec.language)
     return chunks
+
+
+def _extract_python_chunks(rel_path: str, text: str) -> List[CodeChunk]:
+    from .lang_registry import PYTHON_SPEC
+
+    return _extract_ast_chunks(rel_path, text, PYTHON_SPEC)
 
 
 def _extract_references_python(text: str) -> List[str]:
@@ -173,10 +268,12 @@ def chunk_file(path: Path, root: Path) -> List[CodeChunk]:
         return []
 
     suffix = path.suffix.lower()
-    if suffix == ".py":
-        chunks = _extract_python_chunks(rel, text)
-        for chunk in chunks:
-            chunk.references = _extract_references_python(chunk.content)
+    spec = spec_for_suffix(suffix)
+    if spec is not None:
+        chunks = _extract_ast_chunks(rel, text, spec)
+        if suffix == ".py":
+            for chunk in chunks:
+                chunk.references = _extract_references_python(chunk.content)
         return chunks
 
     chunk_type = "readme" if path.name.lower().startswith("readme") else "text"

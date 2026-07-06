@@ -29,3 +29,41 @@ class TestChunkFile:
     def test_repository_chunking(self):
         chunks = chunk_repository(FIXTURES)
         assert len(chunks) >= 3
+
+    def test_rust_extracts_types_and_methods(self):
+        chunks = chunk_file(FIXTURES / "sample.rs", FIXTURES)
+        symbols = {c.symbol for c in chunks if c.symbol}
+        assert "Widget" in symbols
+        assert "helper" in symbols
+        assert any("Widget.spin" in (s or "") for s in symbols)
+        assert all(c.language == "rust" for c in chunks)
+
+    def test_javascript_extracts_functions_and_classes(self):
+        chunks = chunk_file(FIXTURES / "sample.js", FIXTURES)
+        symbols = {c.symbol for c in chunks if c.symbol}
+        assert "helper" in symbols
+        assert "Widget" in symbols
+        assert any("Widget.spin" in (s or "") for s in symbols)
+        assert all(c.language == "javascript" for c in chunks)
+
+    def test_typescript_extracts_interface(self):
+        chunks = chunk_file(FIXTURES / "sample.ts", FIXTURES)
+        symbols = {c.symbol for c in chunks if c.symbol}
+        assert "Config" in symbols
+        assert "Widget" in symbols
+        assert all(c.language == "typescript" for c in chunks)
+
+    def test_tsx_extracts_component(self):
+        chunks = chunk_file(FIXTURES / "sample.tsx", FIXTURES)
+        symbols = {c.symbol for c in chunks if c.symbol}
+        assert "App" in symbols
+        assert "Panel" in symbols
+        assert all(c.language == "tsx" for c in chunks)
+
+    def test_go_extracts_methods(self):
+        chunks = chunk_file(FIXTURES / "sample.go", FIXTURES)
+        symbols = {c.symbol for c in chunks if c.symbol}
+        assert "Helper" in symbols
+        assert "Widget" in symbols
+        assert any("Widget.Spin" in (s or "") for s in symbols)
+        assert all(c.language == "go" for c in chunks)
