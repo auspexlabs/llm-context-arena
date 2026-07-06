@@ -105,6 +105,18 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
   - **How layers combine:** ColBERT and bi-encoder are **mutually exclusive** semantic backends — not run in parallel. Entity seed hits are **union-merged** into the semantic pool (max score per `chunk_id`), then cross-encoder rerank, then graph expansion adds 1-hop / trace neighbors. D measured ColBERT's semantic strength alone; E is what ships.
   - **By category:** trace queries 0.67 (A/B/C with bi-encoder) → 1.0 (D/E with ColBERT semantic). Entity seed fixed symbol_lookup for bi-encoder path (0.75 → 1.0); ColBERT also reaches 1.0 on symbols without seed.
   - **Conclusion:** Default semantic backend is **ColBERT** (`DEC-004`). Bi-encoder remains available via `SEMANTIC_BACKEND=biencoder`. FAISS index kept for bi-encoder fallback and LM Studio embedding path.
+- **results:** *(2026-07-06, learned ColBERT + real BGE rerank — `tests/fixtures/golden_repo` + 18 queries, recall@10; `python -m backend.run_hyp001`)*
+  | Variant | Pipeline | recall@10 |
+  |---------|----------|-----------|
+  | **A** | bi-encoder + BGE rerank | 0.917 |
+  | **B** | A + entity seed | 0.917 |
+  | **C** | B + 1-hop graph | 0.917 |
+  | **D** | learned ColBERT + BGE *(isolated)* | 0.917 |
+  | **E** | learned ColBERT + entity + graph *(production)* | 0.917 |
+  - **vs 2026-07-05 sim:** Hash ColBERT + flat rerank scored 1.0 on D/E; learned PyLate + `BAAI/bge-reranker-base` drops to 0.917 because **q13** (`fetch_user`) and **q14** (permission + fetch) miss under real rerank ordering — all variants share the same failure (rerank dominates final top-10).
+  - **By category:** trace/semantic/pattern remain 1.0; symbol_lookup 0.875; cross_file 0.833.
+  - **Conclusion:** Learned ColBERT index builds and retrieves on golden repo; production stack (E) does not regress vs isolated ColBERT (D). Remaining gap is **rerank demotion of `api/routes.py:fetch_user`** — tune rerank blend or entity seed boost for endpoint symbols (follow-up, not a ColBERT blocker).
+  - **artifact:** `docs/hyp001_results_learned.json`
 
 ### DEC-002: Ship CodeRAG Phases 1–3 (pre-ColBERT)
 - **date:** 2026-07-05 · **status:** accepted · **triggered_by:** `DEC-001` · **docs_updated:** `docs/decision_log.md`, `backend/rag/`, `backend/rag_lmstudio_provider.py`, `backend/rag_lmstudio.py`, `backend/rag_provider.py`, `backend/dependencies.py`, `pyproject.toml`, `tests/unit/test_*.py`, `tests/fixtures/` · **related:** `HYP-001`
@@ -131,7 +143,7 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **date:** 2026-07-06 · **status:** accepted · **triggered_by:** `DEC-004`; user request for real ColBERT embeddings scoped per codebase · **docs_updated:** `docs/decision_log.md`, `backend/rag/colbert_learned.py`, `backend/rag/colbert.py`, `backend/rag/store.py`, `backend/config.py`, `pyproject.toml`, `tests/unit/test_colbert_learned.py` · **related:** `DEC-004`, `HYP-001`
 - **decision:** Replace the hash-based `LateInteractionIndex` stub with **learned ColBERT token embeddings** via **PyLate** (`colbert-ir/colbertv2.0`) as the default semantic backend when `COLBERT_LEARNED=true`. **Model weights are general** (pre-trained, downloaded once); **indexes are per-conversation** at `data/conversations/{id}_colbert/` (Voyager token-embedding store). On build failure or `COLBERT_LEARNED=false`, fall back to hash MaxSim. Bi-encoder FAISS + BGE cross-encoder rerank unchanged — ColBERT replaces only the semantic retrieval step; entity seed and graph still fuse via union merge.
 - **rationale:** Hash ColBERT proved the MaxSim pipeline and HYP-001 ablations but lacks semantic generalization. PyLate gives production ColBERTv2 with per-index persistence without per-codebase training. Rejected: RAGatouille (broken langchain deps in our stack); fine-tuning embeddings per repo (unnecessary for arena use).
-- **impact:** New deps `pylate`, `voyager`. Config: `COLBERT_MODEL`, `COLBERT_DEVICE`, `COLBERT_LEARNED`. Score normalization before cross-encoder rerank blend. Real-embedding golden-set re-run still open.
+- **impact:** New deps `pylate`, `voyager`. Config: `COLBERT_MODEL`, `COLBERT_DEVICE`, `COLBERT_LEARNED`. Score normalization before cross-encoder rerank blend. Golden-set re-run complete (`HYP-001` 2026-07-06 results; `backend/run_hyp001.py`).
 - **supersedes:** hash-only default in `DEC-004` implementation note
 
 ### DEC-006: Multi-language AST chunking via tree-sitter registry (cheap grammars only)

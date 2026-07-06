@@ -153,8 +153,19 @@ class WeakBiEncoder(Embeddings):
         return [self._embed_text(t) for t in texts]
 
 
-def build_eval_store(repo_root: Path, conversation_id: str = "hyp001") -> ConversationStore:
-    """Index golden repo with weak bi-encoder + full graph sidecars."""
+def build_eval_store(
+    repo_root: Path,
+    conversation_id: str = "hyp001",
+    *,
+    colbert_mode: str = "hash",
+    colbert_index_dir: Optional[Path] = None,
+) -> ConversationStore:
+    """Index golden repo with weak bi-encoder + full graph sidecars.
+
+    colbert_mode:
+        hash — deterministic MaxSim (fast, unit-test default)
+        learned — PyLate ColBERTv2 per-conversation index (T8 / production parity)
+    """
     chunks = chunk_repository(repo_root)
     embedder = WeakBiEncoder()
     store = ConversationStore(conversation_id, Path("data/conversations"), embedder)
@@ -162,7 +173,14 @@ def build_eval_store(repo_root: Path, conversation_id: str = "hyp001") -> Conver
     store.chunk_order = [c.chunk_id for c in chunks]
     store.entity_index = EntityIndex.from_chunks(chunks)
     store.graph = CodeGraph.from_chunks(chunks, store.entity_index)
-    store.colbert_index = LateInteractionIndex.from_chunks(chunks)
+
+    if colbert_mode == "learned":
+        from .colbert import build_semantic_index
+
+        idx_dir = colbert_index_dir or Path("data/conversations") / f"{conversation_id}_colbert"
+        store.colbert_index = build_semantic_index(chunks, idx_dir, rebuild=True)
+    else:
+        store.colbert_index = LateInteractionIndex.from_chunks(chunks)
 
     # Bi-encoder sees natural-language cues only — symbols indexed via entity/ColBERT paths
     texts = [_semantic_only_text(c.content) or c.content[:200] for c in chunks]
@@ -171,6 +189,15 @@ def build_eval_store(repo_root: Path, conversation_id: str = "hyp001") -> Conver
 
     store.vectorstore = FAISS.from_texts(texts, embedder, metadatas=metadatas)
     return store
+
+
+def make_eval_reranker(mode: str = "mock") -> CrossEncoderReranker:
+    """mock = flat 0.5 scores (ablation parity); bge = local sentence-transformers."""
+    if mode == "bge":
+        from ..config import RERANK_ENABLED, RERANK_MODEL
+
+        return CrossEncoderReranker(model_name=RERANK_MODEL, enabled=RERANK_ENABLED)
+    return CrossEncoderReranker(score_fn=lambda _q, _d: 0.5, enabled=True)
 
 
 def run_variant_eval(
@@ -213,19 +240,31 @@ def run_hyp001_matrix(
     repo_root: Path,
     queries_path: Path,
     k: int = 10,
+    *,
+    colbert_mode: str = "hash",
+    rerank_mode: str = "mock",
+    colbert_index_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    store = build_eval_store(repo_root)
-    queries = load_golden_queries(queries_path)
-    reranker = CrossEncoderReranker(
-        score_fn=lambda q, d: 0.5,
-        enabled=True,
+    store = build_eval_store(
+        repo_root,
+        colbert_mode=colbert_mode,
+        colbert_index_dir=colbert_index_dir,
     )
+    queries = load_golden_queries(queries_path)
+    reranker = make_eval_reranker(rerank_mode)
     results = {}
     for variant in HYP001_VARIANTS:
         results[variant] = run_variant_eval(store, queries, variant, k=k, reranker=reranker)
     return {
+        "repo": str(repo_root),
         "query_count": len(queries),
         "k": k,
+        "colbert_mode": colbert_mode,
+        "rerank_mode": rerank_mode,
+        "chunk_count": len(store.chunks),
         "variants": results,
         "summary": {v: results[v]["recall_at_k"] for v in HYP001_VARIANTS},
+        "by_category": {
+            v: results[v]["by_category"] for v in HYP001_VARIANTS
+        },
     }
