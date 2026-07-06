@@ -24,6 +24,7 @@ from .config import (
     LMSTUDIO_BASE_URL,
     LMSTUDIO_EMBED_MODEL,
     RERANK_ENABLED,
+    RERANK_MODEL,
     RERANK_TOP_K,
     RETRIEVE_CANDIDATES,
 )
@@ -114,7 +115,10 @@ class LMStudioRAGProvider(RAGProvider):
             model=LMSTUDIO_EMBED_MODEL,
             check_embedding_ctx_length=False,
         )
-        self.reranker = reranker or CrossEncoderReranker(enabled=RERANK_ENABLED)
+        self.reranker = reranker or CrossEncoderReranker(
+            model_name=RERANK_MODEL,
+            enabled=RERANK_ENABLED,
+        )
         self.manifest_path = Path(INDEX_MANIFEST_PATH)
 
     def _store(self, conversation_id: str) -> ConversationStore:

@@ -45,9 +45,9 @@ LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
 LMSTUDIO_EMBED_MODEL = os.getenv(
     "LMSTUDIO_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5"
 )
-LMSTUDIO_RERANK_MODEL = os.getenv(
-    "LMSTUDIO_RERANK_MODEL", "text-embedding-bge-reranker-large"
-)
+# Deprecated: rerank runs locally via sentence-transformers (DEC-009), not LM Studio.
+LMSTUDIO_RERANK_MODEL = os.getenv("LMSTUDIO_RERANK_MODEL", "")
+RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base")
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() in {"1", "true", "yes"}
 SEMANTIC_BACKEND = os.getenv("SEMANTIC_BACKEND", "colbert").lower()  # colbert | biencoder
 COLBERT_LEARNED = os.getenv("COLBERT_LEARNED", "true").lower() in {"1", "true", "yes"}

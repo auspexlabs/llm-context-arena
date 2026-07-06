@@ -226,12 +226,14 @@ CHAIRMAN_MODEL = "openai/gpt-5.1"
 # Required
 OPENROUTER_API_KEY=sk-or-v1-...
 
-# LM Studio (for local RAG)
+# LM Studio (bi-encoder embeddings for FAISS path only)
 LMSTUDIO_BASE_URL=http://localhost:1234/v1
 LMSTUDIO_EMBED_MODEL=text-embedding-nomic-embed-text-v1.5
-LMSTUDIO_RERANK_MODEL=text-embedding-bge-reranker-large
 
-# Retrieval tuning
+# Retrieval pipeline (default: ColBERT semantic + local BGE rerank)
+SEMANTIC_BACKEND=colbert
+COLBERT_LEARNED=true
+RERANK_MODEL=BAAI/bge-reranker-base
 RERANK_ENABLED=true
 RETRIEVE_CANDIDATES=50
 RERANK_TOP_K=20
@@ -256,7 +258,7 @@ Output allowance: 4000 tokens (`OUTPUT_TOKEN_ALLOWANCE=4000`)
 
 - **Backend:** FastAPI, Python 3.10+, async httpx, OpenRouter API
 - **Frontend:** React 19, Vite 7, react-markdown, react-dropzone
-- **RAG:** LangChain, FAISS, LM Studio (OpenAI-compatible API)
+- **RAG:** CodeRAG (tree-sitter chunking, entity/graph hybrid), ColBERT or FAISS semantic, BGE cross-encoder rerank; LM Studio for bi-encoder embeddings when `SEMANTIC_BACKEND=biencoder`
 - **Storage:** JSON files in `data/conversations/`
 
 ---
