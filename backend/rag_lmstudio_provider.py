@@ -31,7 +31,7 @@ from .rag.chunker import SKIP_DIR_NAMES, iter_source_files
 from .rag.format import build_manual_context, estimate_tokens
 from .rag.indexer import index_directory
 from .rag.rerank import CrossEncoderReranker
-from .rag.retriever import CodeRetriever
+from .rag.retriever import CodeRetriever, RetrievalConfig
 from .rag.store import ConversationStore, clear_store_cache, get_or_load_store, register_store
 from .rag_provider import IndexResult, RAGProvider, RetrievalResult, RetrievedChunk
 
@@ -194,6 +194,7 @@ class LMStudioRAGProvider(RAGProvider):
             retrieve_candidates=RETRIEVE_CANDIDATES,
             rerank_top_k=min(top_k, RERANK_TOP_K),
             context_chunk_cap=CONTEXT_CHUNK_CAP,
+            config=RetrievalConfig.from_settings(),
         )
         _block, entries, elapsed_ms = retriever.retrieve(query)
         chunks = [
@@ -234,6 +235,7 @@ class LMStudioRAGProvider(RAGProvider):
             retrieve_candidates=RETRIEVE_CANDIDATES,
             rerank_top_k=RERANK_TOP_K,
             context_chunk_cap=CONTEXT_CHUNK_CAP,
+            config=RetrievalConfig.from_settings(),
         )
         block, entries, _ = retriever.retrieve(query)
         return block, entries

@@ -21,14 +21,33 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetrievalConfig:
-    """Ablation flags for HYP-001 variant matrix."""
+    """Retrieval pipeline flags.
+
+    Production fuses layers in sequence (not bi-encoder + ColBERT in parallel):
+      1. Semantic search — **one** backend: ``colbert`` (LateInteraction MaxSim) or
+         ``biencoder`` (FAISS). These are alternatives, not additive.
+      2. Union merge — entity/symbol seed hits merged in (max score per chunk_id).
+      3. Cross-encoder rerank on the fused pool.
+      4. README demotion.
+      5. Graph expansion (1-hop, or multi-hop for trace queries) on reranked seeds.
+
+    HYP-001 variants A–D are **isolated ablations** for measurement; variant E is
+    the full fused production stack (ColBERT + entity seed + graph).
+    """
 
     use_entity_seed: bool = True
     use_graph: bool = True
     graph_trace: bool = True
-    semantic_backend: str = "biencoder"  # biencoder | colbert
+    semantic_backend: str = "colbert"  # biencoder | colbert
     use_rerank: bool = True
     use_readme_demotion: bool = True
+
+    @classmethod
+    def from_settings(cls) -> "RetrievalConfig":
+        from ..config import SEMANTIC_BACKEND
+
+        backend = SEMANTIC_BACKEND if SEMANTIC_BACKEND in {"colbert", "biencoder"} else "colbert"
+        return cls(semantic_backend=backend)
 
     @classmethod
     def for_variant(cls, variant: str) -> "RetrievalConfig":
@@ -39,8 +58,11 @@ class RetrievalConfig:
         if variant == "C":
             return cls(use_entity_seed=True, use_graph=True, graph_trace=False, semantic_backend="biencoder")
         if variant == "D":
+            # Isolated: ColBERT replaces bi-encoder only (no entity seed, no graph).
             return cls(use_entity_seed=False, use_graph=False, semantic_backend="colbert")
-        return cls()
+        if variant in {"E", "production", "full"}:
+            return cls(semantic_backend="colbert")
+        return cls.from_settings()
 
 
 class CodeRetriever:
@@ -62,7 +84,7 @@ class CodeRetriever:
         self.rerank_top_k = rerank_top_k
         self.context_chunk_cap = context_chunk_cap
         self.graph_hops = graph_hops
-        self.config = config or RetrievalConfig()
+        self.config = config or RetrievalConfig.from_settings()
 
     def _semantic_search(self, query: str, k: int) -> List[Tuple[CodeChunk, float]]:
         if self.config.semantic_backend == "colbert":

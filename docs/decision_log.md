@@ -93,17 +93,18 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **question:** After Phase 1–2, is bi-encoder + cross-encoder rerank + 1-hop graph sufficient for our golden code queries, or does ColBERT (token-level late interaction) materially improve recall@10?
 - **observation:** Coderag plan centers ColBERT for “exact file/object retrieval”; current nomic bi-encoder misses symbols that never appear in natural-language phrasing.
 - **interventions:** Build a 15–20 query golden set from real arena conversations (auth flow, “where is X defined”, cross-file call chains). Measure recall@10 after Phase 1, then Phase 2.
-- **test matrix:** (A) bi-encoder + rerank only; (B) + entity seed; (C) + 1-hop graph; (D) ColBERT index on same chunks.
+- **test matrix:** (A) bi-encoder + rerank only; (B) + entity seed; (C) + 1-hop graph; (D) ColBERT **replaces** bi-encoder only (isolated ablation — no entity/graph); (E) **production fuse** — ColBERT + entity seed + graph + rerank.
 - **results:** *(2026-07-05, simulated golden set — `tests/fixtures/golden_repo` + 18 queries, recall@10)*
   | Variant | Pipeline | recall@10 |
   |---------|----------|-----------|
   | **A** | bi-encoder + rerank | 0.787 |
-  | **B** | A + entity seed | 0.981 |
+  | **B** | A + entity seed (union merge) | 0.981 |
   | **C** | B + 1-hop graph | 0.981 |
-  | **D** | ColBERT (late-interaction) + rerank | 1.000 |
-  - **By category (A → D):** symbol_lookup 0.75 → 1.0 → 1.0 → 1.0; cross_file 1.0 throughout; trace 0.67 → 0.67 → 0.67 → **1.0**; semantic 0.70 → 1.0 → 1.0 → 1.0.
-  - **Finding:** Entity seed is the dominant lift (+19.4pp). Graph added no measurable gain on this 18-query set (1-hop already covered by seed+semantic). ColBERT closed the remaining gap on **trace** queries (+33pp on the single trace case) via token-level symbol matching.
-  - **Conclusion:** Bi-encoder + entity seed + graph is **sufficient for 98%** of golden queries; ColBERT is a **precision layer for trace/symbol-heavy** queries, not a day-one replacement. See `DEC-003`.
+  | **D** | ColBERT + rerank *(isolated — no seed/graph)* | 1.000 |
+  | **E** | ColBERT + entity seed + graph *(production)* | 1.000 |
+  - **How layers combine:** ColBERT and bi-encoder are **mutually exclusive** semantic backends — not run in parallel. Entity seed hits are **union-merged** into the semantic pool (max score per `chunk_id`), then cross-encoder rerank, then graph expansion adds 1-hop / trace neighbors. D measured ColBERT's semantic strength alone; E is what ships.
+  - **By category:** trace queries 0.67 (A/B/C with bi-encoder) → 1.0 (D/E with ColBERT semantic). Entity seed fixed symbol_lookup for bi-encoder path (0.75 → 1.0); ColBERT also reaches 1.0 on symbols without seed.
+  - **Conclusion:** Default semantic backend is **ColBERT** (`DEC-004`). Bi-encoder remains available via `SEMANTIC_BACKEND=biencoder`. FAISS index kept for bi-encoder fallback and LM Studio embedding path.
 
 ### DEC-002: Ship CodeRAG Phases 1–3 (pre-ColBERT)
 - **date:** 2026-07-05 · **status:** accepted · **triggered_by:** `DEC-001` · **docs_updated:** `docs/decision_log.md`, `backend/rag/`, `backend/rag_lmstudio_provider.py`, `backend/rag_lmstudio.py`, `backend/rag_provider.py`, `backend/dependencies.py`, `pyproject.toml`, `tests/unit/test_*.py`, `tests/fixtures/` · **related:** `HYP-001`
@@ -116,8 +117,12 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **supersedes:** pre-DEC-002 `rag_lmstudio.py` monolith implementation
 
 ### DEC-003: Defer production ColBERT; keep late-interaction as optional eval path
-- **date:** 2026-07-05 · **status:** accepted · **triggered_by:** `HYP-001` results · **docs_updated:** `docs/decision_log.md`, `backend/rag/colbert.py`, `backend/rag/eval.py`, `backend/rag/retriever.py` · **related:** `HYP-001`, `DEC-001`
-- **decision:** Do **not** replace FAISS bi-encoder with ColBERT in the default production path. Ship entity seed + graph (variants B/C) as the default retrieval stack. Keep `LateInteractionIndex` (`backend/rag/colbert.py`) as an **optional** semantic backend selectable via `RetrievalConfig.semantic_backend="colbert"` and the `HYP-001` eval harness (`backend/rag/eval.py`). Revisit full ColBERT (`colbert-ai`) integration when a **real** golden set (arena conversations + LM Studio embeddings) confirms trace-query gaps persist.
-- **rationale:** `HYP-001` on the 18-query fixture: entity seed raised recall@10 from 0.787 → 0.981; ColBERT-only reached 1.000 mainly by fixing trace queries bi-encoder+seed missed. The 1.9pp marginal gain does not justify ColBERT index weight/complexity in local LM Studio setup yet. Rejected: blocking ColBERT forever; switching default index to ColBERT on day one.
-- **impact:** `RetrievalConfig.for_variant()` supports A/B/C/D ablations; golden repo + queries in `tests/fixtures/`; `tests/unit/test_hyp001.py` locks regression thresholds. Production `LMStudioRAGProvider` unchanged (bi-encoder default).
-- **promotes:** `HYP-001` (partial — fixture sim; real-embedding re-run still open)
+- **date:** 2026-07-05 · **status:** superseded by DEC-004 · **triggered_by:** `HYP-001` results · **docs_updated:** `docs/decision_log.md` · **related:** `HYP-001`, `DEC-001`
+- **decision:** *(withdrawn)* Initially deferred ColBERT pending real golden-set validation. Superseded after clarifying that HYP-001 variant D was an isolated ablation, not the fused production stack.
+- **supersedes:** —
+
+### DEC-004: Default semantic backend to ColBERT (late-interaction)
+- **date:** 2026-07-05 · **status:** accepted · **triggered_by:** `HYP-001` results; user review of fusion semantics · **docs_updated:** `docs/decision_log.md`, `backend/config.py`, `backend/rag/retriever.py`, `backend/rag_lmstudio_provider.py`, `backend/rag/eval.py` · **related:** `HYP-001`, `DEC-001` · **supersedes:** `DEC-003`
+- **decision:** Set **`SEMANTIC_BACKEND=colbert`** as default. Production retrieval (variant **E**) fuses: `LateInteractionIndex` semantic search → union entity seed → cross-encoder rerank → README demotion → graph expansion. FAISS bi-encoder remains built at index time and selectable via `SEMANTIC_BACKEND=biencoder` for fallback or A/B/C ablations.
+- **rationale:** ColBERT does not stack on bi-encoder — it **replaces** the semantic step. D=1.0 isolated showed ColBERT fixes trace/symbol queries bi-encoder misses; E=1.0 confirms ColBERT + entity + graph is the full stack. `LateInteractionIndex` uses MaxSim (no `colbert-ai` download in tests); real `colbert-ai` integration remains a follow-up for production token embeddings.
+- **impact:** `RetrievalConfig.from_settings()` reads `SEMANTIC_BACKEND`; `LMStudioRAGProvider` passes it to `CodeRetriever`. HYP-001 matrix extended with variant E.

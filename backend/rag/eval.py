@@ -20,7 +20,7 @@ from .retriever import CodeRetriever, RetrievalConfig
 from .store import ConversationStore
 from .types import CodeChunk
 
-HYP001_VARIANTS = ("A", "B", "C", "D")
+HYP001_VARIANTS = ("A", "B", "C", "D", "E")
 
 
 @dataclass

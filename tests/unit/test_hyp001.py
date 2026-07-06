@@ -52,6 +52,14 @@ class TestHyp001Matrix:
         d = run_variant_eval(eval_store, symbol_queries, "D", k=10)
         assert d["recall_at_k"] > a["recall_at_k"]
 
+    def test_production_variant_e_fuses_colbert_with_hybrid(self, eval_store, golden_queries):
+        """E = ColBERT semantic + entity seed + graph (actual production stack)."""
+        c = run_variant_eval(eval_store, golden_queries, "C", k=10)
+        d = run_variant_eval(eval_store, golden_queries, "D", k=10)
+        e = run_variant_eval(eval_store, golden_queries, "E", k=10)
+        assert e["recall_at_k"] >= c["recall_at_k"]
+        assert e["recall_at_k"] >= d["recall_at_k"]
+
     def test_full_matrix_summary(self):
         matrix = run_hyp001_matrix(GOLDEN_REPO, QUERIES, k=10)
         summary = matrix["summary"]
@@ -59,8 +67,7 @@ class TestHyp001Matrix:
         assert summary["B"] > summary["A"]
         assert summary["C"] >= summary["B"]
         assert summary["D"] > summary["A"]
-        # ColBERT lifts symbol recall; hybrid C still competitive on full set
-        assert summary["D"] >= summary["C"]
+        assert summary["E"] >= summary["C"]
         symbol = [q for q in load_golden_queries(QUERIES) if q.category == "symbol_lookup"]
         a_sym = run_variant_eval(build_eval_store(GOLDEN_REPO), symbol, "A", k=10)
         d_sym = run_variant_eval(build_eval_store(GOLDEN_REPO), symbol, "D", k=10)

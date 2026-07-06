@@ -49,6 +49,7 @@ LMSTUDIO_RERANK_MODEL = os.getenv(
     "LMSTUDIO_RERANK_MODEL", "text-embedding-bge-reranker-large"
 )
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() in {"1", "true", "yes"}
+SEMANTIC_BACKEND = os.getenv("SEMANTIC_BACKEND", "colbert").lower()  # colbert | biencoder
 RETRIEVE_CANDIDATES = int(os.getenv("RETRIEVE_CANDIDATES", "50"))
 RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "20"))
 CONTEXT_CHUNK_CAP = int(os.getenv("CONTEXT_CHUNK_CAP", "60"))
