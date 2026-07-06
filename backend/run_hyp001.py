@@ -71,9 +71,11 @@ def main(argv: list[str] | None = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(matrix, indent=2), encoding="utf-8")
 
-    print("\nrecall@{} summary:".format(args.k))
-    for variant, score in matrix["summary"].items():
-        print(f"  {variant}: {score:.3f}")
+    print("\nrecall@{} by checkpoint:".format(args.k))
+    for checkpoint, scores in matrix["summary_by_checkpoint"].items():
+        print(f"  [{checkpoint}]")
+        for variant, score in scores.items():
+            print(f"    {variant}: {score:.3f}")
     print(f"\nWrote {args.output}")
     return 0
 

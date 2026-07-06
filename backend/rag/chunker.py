@@ -209,13 +209,21 @@ def _extract_ast_chunks(rel_path: str, text: str, spec: LanguageSpec) -> List[Co
             if symbol and class_name:
                 symbol = f"{class_name}.{symbol}"
             role = "method" if class_name else "function"
-            add_chunk(
+            link_parent = class_name is not None or (
+                spec.language == "python" and parent_id is not None
+            )
+            fn_chunk = add_chunk(
                 node,
                 role,
                 symbol,
-                parent_id=parent_id if class_name else None,
-                parent_content=parent_content if class_name else None,
+                parent_id=parent_id if link_parent else None,
+                parent_content=parent_content if link_parent else None,
             )
+            if spec.language == "python":
+                fn_id = fn_chunk.chunk_id if fn_chunk else parent_id
+                fn_body = fn_chunk.content if fn_chunk else parent_content
+                for child in node.children:
+                    walk(child, class_name, fn_id, fn_body)
             return
 
         if ntype in spec.class_nodes:

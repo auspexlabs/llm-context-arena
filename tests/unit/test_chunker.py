@@ -77,3 +77,16 @@ class TestChunkFile:
         assert "Widget" in symbols
         assert any("Widget.Spin" in (s or "") for s in symbols)
         assert all(c.language == "go" for c in chunks)
+
+    def test_python_extracts_nested_functions(self):
+        golden = FIXTURES / "golden_repo"
+        chunks = chunk_file(golden / "api/routes.py", golden)
+        by_symbol = {c.symbol: c for c in chunks if c.symbol}
+        assert "register_routes" in by_symbol
+        assert "fetch_user" in by_symbol
+        nested = by_symbol["fetch_user"]
+        parent = by_symbol["register_routes"]
+        assert nested.parent_id == parent.chunk_id
+        assert nested.parent_content == parent.content
+        assert nested.line_start >= parent.line_start
+        assert nested.line_end <= parent.line_end

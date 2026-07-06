@@ -120,11 +120,8 @@ class CodeRetriever:
         merged.sort(key=lambda x: x[1], reverse=True)
         return merged
 
-    def retrieve_ranked(self, query: str) -> List[Tuple[CodeChunk, float]]:
-        """Return ranked chunks without formatting — used by eval harness."""
-        if self.store.vectorstore is None and not self.store.chunks:
-            return []
-
+    def _build_candidate_pool(self, query: str) -> List[Tuple[CodeChunk, float]]:
+        """Semantic + entity seed merge, sorted, capped at retrieve_candidates."""
         semantic = self._semantic_search(query, k=self.retrieve_candidates)
 
         merged: dict[str, Tuple[CodeChunk, float]] = {}
@@ -143,16 +140,33 @@ class CodeRetriever:
 
         pool = list(merged.values())
         pool.sort(key=lambda x: x[1], reverse=True)
-        pool = pool[: self.retrieve_candidates]
+        return pool[: self.retrieve_candidates]
 
+    def retrieve_pre_rerank(self, query: str, top_k: Optional[int] = None) -> List[Tuple[CodeChunk, float]]:
+        """Top-K after semantic + entity merge, before rerank/graph."""
+        k = top_k or self.rerank_top_k
+        return self._build_candidate_pool(query)[:k]
+
+    def retrieve_post_rerank_pre_graph(
+        self, query: str, top_k: Optional[int] = None
+    ) -> List[Tuple[CodeChunk, float]]:
+        """Top-K after rerank + README demotion, before graph expansion."""
+        k = top_k or self.rerank_top_k
+        pool = self._build_candidate_pool(query)
         if self.config.use_rerank and self.reranker.enabled:
-            ranked = self.reranker.rerank(query, pool, top_k=self.rerank_top_k)
+            ranked = self.reranker.rerank(query, pool, top_k=k)
         else:
-            ranked = pool[: self.rerank_top_k]
-
+            ranked = pool[:k]
         if self.config.use_readme_demotion:
             ranked = apply_readme_demotion(ranked)
+        return ranked[:k]
 
+    def retrieve_ranked(self, query: str) -> List[Tuple[CodeChunk, float]]:
+        """Return ranked chunks without formatting — used by eval harness."""
+        if self.store.vectorstore is None and not self.store.chunks:
+            return []
+
+        ranked = self.retrieve_post_rerank_pre_graph(query, top_k=self.rerank_top_k)
         ranked = self._expand_graph(ranked, query)
         return ranked[: self.context_chunk_cap]
 

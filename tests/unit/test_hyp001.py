@@ -68,6 +68,10 @@ class TestHyp001Matrix:
         assert summary["C"] >= summary["B"]
         assert summary["D"] > summary["A"]
         assert summary["E"] >= summary["C"]
+        assert "summary_by_checkpoint" in matrix
+        pre = matrix["summary_by_checkpoint"]["pre_rerank"]
+        assert pre["B"] > pre["A"]
+        assert "checkpoints" in matrix["variants"]["E"]
         symbol = [q for q in load_golden_queries(QUERIES) if q.category == "symbol_lookup"]
         a_sym = run_variant_eval(build_eval_store(GOLDEN_REPO), symbol, "A", k=10)
         d_sym = run_variant_eval(build_eval_store(GOLDEN_REPO), symbol, "D", k=10)

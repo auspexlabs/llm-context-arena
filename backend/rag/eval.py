@@ -200,6 +200,44 @@ def make_eval_reranker(mode: str = "mock") -> CrossEncoderReranker:
     return CrossEncoderReranker(score_fn=lambda _q, _d: 0.5, enabled=True)
 
 
+CHECKPOINTS = ("pre_rerank", "post_rerank_pre_graph", "full_pipeline")
+
+
+def _eval_checkpoint(
+    retriever: CodeRetriever,
+    query: str,
+    checkpoint: str,
+    k: int,
+) -> List[CodeChunk]:
+    if checkpoint == "pre_rerank":
+        ranked = retriever.retrieve_pre_rerank(query, top_k=k)
+    elif checkpoint == "post_rerank_pre_graph":
+        ranked = retriever.retrieve_post_rerank_pre_graph(query, top_k=k)
+    else:
+        ranked = retriever.retrieve_ranked(query)
+    return [chunk for chunk, _ in ranked]
+
+
+def _score_checkpoint(
+    retriever: CodeRetriever,
+    queries: Sequence[GoldenQuery],
+    checkpoint: str,
+    k: int,
+) -> Dict[str, Any]:
+    per_query: List[float] = []
+    by_category: Dict[str, List[float]] = {}
+    for gq in queries:
+        retrieved = _eval_checkpoint(retriever, gq.query, checkpoint, k)
+        score = recall_at_k(retrieved, gq.relevant, k=k)
+        per_query.append(score)
+        by_category.setdefault(gq.category, []).append(score)
+    return {
+        "recall_at_k": mean_recall_at_k(per_query),
+        "per_query": {gq.id: per_query[i] for i, gq in enumerate(queries)},
+        "by_category": {cat: mean_recall_at_k(scores) for cat, scores in by_category.items()},
+    }
+
+
 def run_variant_eval(
     store: ConversationStore,
     queries: Sequence[GoldenQuery],
@@ -217,21 +255,16 @@ def run_variant_eval(
         config=config,
     )
 
-    per_query: List[float] = []
-    by_category: Dict[str, List[float]] = {}
-
-    for gq in queries:
-        ranked = retriever.retrieve_ranked(gq.query)
-        retrieved = [chunk for chunk, _ in ranked]
-        score = recall_at_k(retrieved, gq.relevant, k=k)
-        per_query.append(score)
-        by_category.setdefault(gq.category, []).append(score)
+    checkpoints = {
+        name: _score_checkpoint(retriever, queries, name, k) for name in CHECKPOINTS
+    }
 
     return {
         "variant": variant,
-        "recall_at_k": mean_recall_at_k(per_query),
-        "per_query": {gq.id: per_query[i] for i, gq in enumerate(queries)},
-        "by_category": {cat: mean_recall_at_k(scores) for cat, scores in by_category.items()},
+        "recall_at_k": checkpoints["full_pipeline"]["recall_at_k"],
+        "per_query": checkpoints["full_pipeline"]["per_query"],
+        "by_category": checkpoints["full_pipeline"]["by_category"],
+        "checkpoints": checkpoints,
         "k": k,
     }
 
@@ -255,6 +288,14 @@ def run_hyp001_matrix(
     results = {}
     for variant in HYP001_VARIANTS:
         results[variant] = run_variant_eval(store, queries, variant, k=k, reranker=reranker)
+    summary = {checkpoint: {} for checkpoint in CHECKPOINTS}
+    by_category = {checkpoint: {} for checkpoint in CHECKPOINTS}
+    for variant in HYP001_VARIANTS:
+        for checkpoint in CHECKPOINTS:
+            cp = results[variant]["checkpoints"][checkpoint]
+            summary[checkpoint][variant] = cp["recall_at_k"]
+            by_category[checkpoint][variant] = cp["by_category"]
+
     return {
         "repo": str(repo_root),
         "query_count": len(queries),
@@ -263,8 +304,8 @@ def run_hyp001_matrix(
         "rerank_mode": rerank_mode,
         "chunk_count": len(store.chunks),
         "variants": results,
-        "summary": {v: results[v]["recall_at_k"] for v in HYP001_VARIANTS},
-        "by_category": {
-            v: results[v]["by_category"] for v in HYP001_VARIANTS
-        },
+        "summary": summary["full_pipeline"],
+        "summary_by_checkpoint": summary,
+        "by_category": by_category["full_pipeline"],
+        "by_category_by_checkpoint": by_category,
     }
