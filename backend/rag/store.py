@@ -13,7 +13,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
 from .chunker import iter_source_files
-from .colbert import LateInteractionIndex
+from .colbert import SemanticIndex, build_semantic_index, clear_semantic_index
 from .entity_index import EntityIndex
 from .graph import CodeGraph
 from .types import CodeChunk
@@ -37,7 +37,7 @@ class ConversationStore:
         self.chunk_order: List[str] = []
         self.entity_index: Optional[EntityIndex] = None
         self.graph: Optional[CodeGraph] = None
-        self.colbert_index: Optional[LateInteractionIndex] = None
+        self.colbert_index: Optional[SemanticIndex] = None
         self.vectorstore: Optional[FAISS] = None
 
     def _base_path(self) -> Path:
@@ -55,6 +55,9 @@ class ConversationStore:
     def _graph_path(self) -> Path:
         return Path("data") / "conversations" / f"{self.conversation_id}_graph.pkl"
 
+    def _colbert_path(self) -> Path:
+        return Path("data") / "conversations" / f"{self.conversation_id}_colbert"
+
     def build_from_chunks(
         self,
         chunks: List[CodeChunk],
@@ -65,7 +68,7 @@ class ConversationStore:
         self.chunk_order = [c.chunk_id for c in chunks]
         self.entity_index = EntityIndex.from_chunks(chunks)
         self.graph = CodeGraph.from_chunks(chunks, self.entity_index)
-        self.colbert_index = LateInteractionIndex.from_chunks(chunks)
+        self.colbert_index = build_semantic_index(chunks, self._colbert_path(), rebuild=True)
 
         texts: List[str] = []
         metadatas: List[dict] = []
@@ -156,7 +159,11 @@ class ConversationStore:
         self.graph = CodeGraph.load(self._graph_path()) or CodeGraph.from_chunks(
             list(self.chunks.values()), self.entity_index
         )
-        self.colbert_index = LateInteractionIndex.from_chunks(list(self.chunks.values()))
+        self.colbert_index = build_semantic_index(
+            list(self.chunks.values()),
+            self._colbert_path(),
+            rebuild=False,
+        )
         return True
 
     def _hydrate_chunks_from_faiss(self):
@@ -213,7 +220,13 @@ class ConversationStore:
         self.graph = None
         self.colbert_index = None
         self.vectorstore = None
-        for path in [self._faiss_path(), self._chunks_path(), self._entity_path(), self._graph_path()]:
+        for path in [
+            self._faiss_path(),
+            self._chunks_path(),
+            self._entity_path(),
+            self._graph_path(),
+            self._colbert_path(),
+        ]:
             try:
                 if path.is_dir():
                     import shutil

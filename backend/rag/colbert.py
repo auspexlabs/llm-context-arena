@@ -5,12 +5,16 @@ from __future__ import annotations
 import logging
 import math
 import re
+import shutil
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from .types import CodeChunk
 
 logger = logging.getLogger(__name__)
+
+SemanticIndex = Union["LateInteractionIndex", "LearnedColBERTIndex"]
 
 TokenEmbedFn = Callable[[str], List[float]]
 
@@ -82,12 +86,47 @@ class LateInteractionIndex:
         return idx
 
 
-def try_load_colbert_model(model_name: str = "colbert-ir/colbertv2.0"):
-    """Optional real ColBERT model — returns None if colbert-ai is unavailable."""
-    try:
-        from colbert import Indexer, Searcher  # type: ignore[import-untyped]
-        logger.info("colbert-ai available (model=%s)", model_name)
-        return model_name
-    except Exception:
-        logger.debug("colbert-ai not installed; using LateInteractionIndex fallback")
-        return None
+def build_semantic_index(
+    chunks: List[CodeChunk],
+    index_dir: Path,
+    *,
+    rebuild: bool = False,
+) -> SemanticIndex:
+    """Build or load per-conversation semantic index (learned ColBERT or hash fallback)."""
+    import os
+
+    from .. import config as app_config
+    from .colbert_learned import LearnedColBERTIndex, _pylate_available
+
+    chunk_map = {c.chunk_id: c for c in chunks}
+    learned = os.getenv("COLBERT_LEARNED", str(app_config.COLBERT_LEARNED)).lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    model_name = os.getenv("COLBERT_MODEL", app_config.COLBERT_MODEL)
+    device = os.getenv("COLBERT_DEVICE", app_config.COLBERT_DEVICE)
+
+    if learned and _pylate_available():
+        try:
+            if not rebuild:
+                loaded = LearnedColBERTIndex.load(
+                    chunk_map, index_dir, model_name, device
+                )
+                if loaded is not None:
+                    return loaded
+            return LearnedColBERTIndex.build(
+                chunks, index_dir, model_name, device
+            )
+        except Exception:
+            logger.exception(
+                "Learned ColBERT index failed for %s; using hash fallback",
+                index_dir.name,
+            )
+
+    return LateInteractionIndex.from_chunks(chunks)
+
+
+def clear_semantic_index(index_dir: Path) -> None:
+    if index_dir.exists():
+        shutil.rmtree(index_dir, ignore_errors=True)

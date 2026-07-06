@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from .colbert import LateInteractionIndex
+from .colbert import SemanticIndex
 from .entity_index import EntityIndex
 from .format import build_context_block
 from .graph import CodeGraph
@@ -88,7 +88,7 @@ class CodeRetriever:
 
     def _semantic_search(self, query: str, k: int) -> List[Tuple[CodeChunk, float]]:
         if self.config.semantic_backend == "colbert":
-            colbert: Optional[LateInteractionIndex] = getattr(self.store, "colbert_index", None)
+            colbert: Optional[SemanticIndex] = getattr(self.store, "colbert_index", None)
             if colbert is not None:
                 return colbert.search(query, k=k)
             logger.warning("ColBERT index missing; falling back to bi-encoder")

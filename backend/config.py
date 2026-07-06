@@ -50,6 +50,9 @@ LMSTUDIO_RERANK_MODEL = os.getenv(
 )
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() in {"1", "true", "yes"}
 SEMANTIC_BACKEND = os.getenv("SEMANTIC_BACKEND", "colbert").lower()  # colbert | biencoder
+COLBERT_LEARNED = os.getenv("COLBERT_LEARNED", "true").lower() in {"1", "true", "yes"}
+COLBERT_MODEL = os.getenv("COLBERT_MODEL", "colbert-ir/colbertv2.0")
+COLBERT_DEVICE = os.getenv("COLBERT_DEVICE", "cpu")
 RETRIEVE_CANDIDATES = int(os.getenv("RETRIEVE_CANDIDATES", "50"))
 RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "20"))
 CONTEXT_CHUNK_CAP = int(os.getenv("CONTEXT_CHUNK_CAP", "60"))
