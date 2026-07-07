@@ -168,4 +168,36 @@ class TestProviderIndexDelta:
         delta = provider.compute_index_delta("conv-1")
         assert delta["has_index"] is True
         assert delta["has_changes"] is True
+        assert delta["needs_reindex"] is True
+        assert delta["snapshot_stale"] is True
         assert "sample_module.py" in delta["changed"]
+
+    def test_compute_index_delta_reports_git_drift(self, tmp_path, monkeypatch):
+        from backend.rag_lmstudio_provider import LMStudioRAGProvider
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        sample = repo / "sample_module.py"
+        sample.write_text("original", encoding="utf-8")
+
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(
+            '{"conv-1": {"root": "%s", "files": [{"path": "sample_module.py", "bytes": 8, "mtime": 1.0}], "indexed_at": 1}}'
+            % str(repo),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("backend.rag_lmstudio_provider.INDEX_MANIFEST_PATH", str(manifest_path))
+
+        live_repo = tmp_path / "live"
+        live_repo.mkdir()
+        (live_repo / ".git").mkdir()
+        live_sample = live_repo / "sample_module.py"
+        live_sample.write_text("changed in git", encoding="utf-8")
+
+        provider = LMStudioRAGProvider(embedder=_FakeEmbedder())
+        monkeypatch.setattr(provider, "_git_candidate_paths", lambda *_a, **_k: ["sample_module.py"])
+
+        delta = provider.compute_index_delta("conv-1", repo_root=live_repo)
+        assert delta["git_stale"] is True
+        assert delta["needs_reindex"] is True
+        assert "sample_module.py" in delta["git_drift"]["changed"]

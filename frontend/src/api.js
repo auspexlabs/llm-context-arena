@@ -189,6 +189,35 @@ export const api = {
     return response.json();
   },
 
+  async getIndexManifest(conversationId, repoRoot) {
+    const url = new URL(`${API_BASE}/api/index_manifest`);
+    if (conversationId) {
+      url.searchParams.set('conversation_id', conversationId);
+    }
+    if (repoRoot) {
+      url.searchParams.set('repo_root', repoRoot);
+    }
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error('Failed to load index manifest');
+    }
+    return response.json();
+  },
+
+  async reindexSnapshot(conversationId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/reindex`,
+      { method: 'POST' }
+    );
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await response.json() : null;
+    if (!response.ok) {
+      const msg = data?.message || `Failed to reindex snapshot (status ${response.status})`;
+      throw new Error(msg);
+    }
+    return data || {};
+  },
+
   async reindexGit(conversationId, repoRoot) {
     const url = new URL(`${API_BASE}/api/conversations/${conversationId}/reindex_git`);
     if (repoRoot) {

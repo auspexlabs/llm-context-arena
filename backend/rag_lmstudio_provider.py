@@ -29,7 +29,12 @@ from .config import (
     RETRIEVE_CANDIDATES,
 )
 from .rag.chunker import SKIP_DIR_NAMES, iter_source_files
-from .rag.manifest import diff_manifest, scan_repo_files
+from .rag.manifest import (
+    ManifestDelta,
+    diff_manifest,
+    scan_paths_metadata,
+    scan_repo_files,
+)
 from .rag.format import build_manual_context, estimate_tokens
 from .rag.indexer import index_directory
 from .rag.rerank import create_reranker
@@ -150,6 +155,33 @@ class LMStudioRAGProvider(RAGProvider):
         store = ConversationStore(conversation_id, Path("data/conversations"), self.embeddings)
         return index_directory(root_dir, conversation_id, store, self.manifest_path)
 
+    def _git_candidate_paths(
+        self,
+        repo_root: Path,
+        include_untracked: Optional[bool] = None,
+    ) -> List[str]:
+        """Relative paths that would be copied into a git snapshot."""
+        root = repo_root.resolve()
+        tracked = set(_git_ls_tracked(root))
+        include_untracked = (
+            INDEX_INCLUDE_UNTRACKED if include_untracked is None else include_untracked
+        )
+        status_paths = set(_git_status_paths(root)) if include_untracked else set()
+        candidates: List[str] = []
+        for rel in sorted(tracked | status_paths):
+            rel_str = rel.replace("\\", "/")
+            if _matches_globs(rel_str, INDEX_EXCLUDE_GLOBS):
+                continue
+            if INDEX_INCLUDE_GLOBS and not _matches_globs(rel_str, INDEX_INCLUDE_GLOBS):
+                continue
+            src = root / rel
+            if not src.is_file():
+                continue
+            if any(skip in src.parts for skip in SKIP_DIR_NAMES):
+                continue
+            candidates.append(rel_str)
+        return candidates
+
     def build_git_snapshot(
         self,
         conversation_id: str,
@@ -157,10 +189,7 @@ class LMStudioRAGProvider(RAGProvider):
         include_untracked: bool = False,
     ) -> str:
         root = repo_root or Path(".").resolve()
-        tracked = set(_git_ls_tracked(root))
-        include_untracked = INDEX_INCLUDE_UNTRACKED if include_untracked is None else include_untracked
-        status_paths = set(_git_status_paths(root)) if include_untracked else set()
-        candidates = tracked | status_paths
+        candidates = self._git_candidate_paths(root, include_untracked=include_untracked)
 
         snapshot_dir = Path("temp_repos") / conversation_id
         if snapshot_dir.exists():
@@ -168,18 +197,9 @@ class LMStudioRAGProvider(RAGProvider):
         snapshot_dir.mkdir(parents=True, exist_ok=True)
 
         copied = 0
-        for rel in sorted(candidates):
-            src = root / rel
-            if not src.is_file():
-                continue
-            rel_str = rel.replace("\\", "/")
-            if _matches_globs(rel_str, INDEX_EXCLUDE_GLOBS):
-                continue
-            if INDEX_INCLUDE_GLOBS and not _matches_globs(rel_str, INDEX_INCLUDE_GLOBS):
-                continue
-            if any(skip in src.parts for skip in SKIP_DIR_NAMES):
-                continue
-            dest = snapshot_dir / rel
+        for rel_str in candidates:
+            src = root / rel_str
+            dest = snapshot_dir / rel_str
             dest.parent.mkdir(parents=True, exist_ok=True)
             try:
                 shutil.copy2(src, dest)
@@ -278,47 +298,89 @@ class LMStudioRAGProvider(RAGProvider):
     def get_manifest(self) -> Dict[str, Any]:
         return _load_manifest()
 
-    def compute_index_delta(self, conversation_id: str) -> Dict[str, Any]:
-        """Compare on-disk repo against last indexed manifest for a conversation."""
+    def compute_index_delta(
+        self,
+        conversation_id: str,
+        repo_root: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        """Compare indexed manifest against snapshot dir and optional live git repo."""
         manifest = _load_manifest()
         entry = manifest.get(conversation_id)
         if not entry:
-            return {"has_index": False, "has_changes": False}
+            return {
+                "has_index": False,
+                "has_changes": False,
+                "needs_reindex": True,
+                "reason": "no_index",
+            }
 
         root_str = entry.get("root")
         if not root_str:
-            return {"has_index": True, "has_changes": False, "root_missing": True}
-
-        root = Path(root_str)
-        if not root.is_dir():
             return {
                 "has_index": True,
-                "has_changes": False,
+                "has_changes": True,
+                "needs_reindex": True,
                 "root_missing": True,
-                "root": root_str,
+                "reason": "root_missing",
             }
 
-        current = scan_repo_files(root)
-        delta = diff_manifest(entry.get("files"), current)
-        payload = delta.to_dict()
+        root = Path(root_str)
+        root_missing = not root.is_dir()
+        snapshot_delta = ManifestDelta()
+        if not root_missing:
+            current = scan_repo_files(root)
+            snapshot_delta = diff_manifest(entry.get("files"), current)
+
+        git_delta = None
+        git_root = repo_root.resolve() if repo_root else None
+        if git_root and git_root.is_dir() and (git_root / ".git").exists():
+            live_files = scan_paths_metadata(
+                git_root, self._git_candidate_paths(git_root)
+            )
+            git_delta = diff_manifest(entry.get("files"), live_files)
+
+        snapshot_stale = root_missing or snapshot_delta.has_changes
+        git_stale = bool(git_delta and git_delta.has_changes)
+        needs_reindex = snapshot_stale or git_stale
+
+        reasons = []
+        if root_missing:
+            reasons.append("root_missing")
+        if snapshot_delta.has_changes:
+            reasons.append("snapshot_drift")
+        if git_stale:
+            reasons.append("git_drift")
+
+        payload = snapshot_delta.to_dict()
         payload.update({
             "has_index": True,
-            "root_missing": False,
+            "root_missing": root_missing,
             "root": root_str,
             "indexed_at": entry.get("indexed_at"),
             "file_count": entry.get("file_count"),
             "chunk_count": entry.get("chunk_count"),
+            "snapshot_stale": snapshot_stale,
+            "git_stale": git_stale,
+            "git_drift": git_delta.to_dict() if git_delta else None,
+            "needs_reindex": needs_reindex,
+            "reason": reasons[0] if len(reasons) == 1 else ("multiple" if reasons else None),
+            "reasons": reasons,
         })
+        payload["has_changes"] = needs_reindex
         return payload
 
-    def get_manifest_with_deltas(self) -> Dict[str, Any]:
+    def get_manifest_with_deltas(
+        self, repo_root: Optional[Path] = None
+    ) -> Dict[str, Any]:
         """Return manifest entries enriched with per-conversation delta status."""
         manifest = _load_manifest()
         enriched: Dict[str, Any] = {}
         for conversation_id, entry in manifest.items():
             enriched[conversation_id] = {
                 **entry,
-                "changed_since_index": self.compute_index_delta(conversation_id),
+                "changed_since_index": self.compute_index_delta(
+                    conversation_id, repo_root=repo_root
+                ),
             }
         return enriched
 

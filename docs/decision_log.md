@@ -239,6 +239,16 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **rationale:** CPU ColBERT encode dominated index rebuild (~0.28 s/chunk); GPU cut 396-chunk index from ~110 s to ~7.6 s. Unpinned torch pulled a cu130 build that failed CUDA init on the dev box. Auto-default keeps laptops/CI on CPU without env churn. `cu124` tops out at torch 2.6, below `fast-plaid`’s floor.
 - **impact:** `build_semantic_index()` uses `get_colbert_device()`; `COLBERT_DEVICE` env doc updated. Re-run `uv lock` after pin. Users without NVIDIA GPU need no change.
 
+### DEC-013: In-product stale index warning + one-click reindex
+- **date:** 2026-07-07 · **status:** accepted · **triggered_by:** user question — how do users know the codebase needs another indexing pass? · **docs_updated:** `docs/decision_log.md`, `backend/rag/manifest.py`, `backend/rag_lmstudio_provider.py`, `backend/main.py`, `frontend/src/api.js`, `frontend/src/components/ChatInterface.jsx`, `frontend/src/components/ChatInterface.css`, `tests/unit/test_manifest_delta.py` · **related:** `DEC-008`, `DEC-012`
+- **decision:** Surface index freshness in the chat UI:
+  - **`GET /api/index_manifest`** now compares manifest against both the stored snapshot (`temp_repos/{id}`) and, when `repo_root` is configured, the **live git working tree** (`git_drift`).
+  - Payload adds `needs_reindex`, `snapshot_stale`, `git_stale`, `git_drift`, `reasons`.
+  - **`POST /api/conversations/{id}/reindex`** re-runs delta-aware indexing on the existing snapshot (ZIP workflow).
+  - **ChatInterface** polls manifest on load/focus/60s; shows a banner when `needs_reindex` with counts + last-indexed time; **Reindex** button calls git reindex when `repo_root` is set, else snapshot reindex.
+- **rationale:** Backend delta detection existed but was API-only; git users could edit files with `has_changes=false` on the snapshot. Users need an obvious in-product signal before trusting retrieval.
+- **impact:** No query-time auto-reindex (user-triggered only). Git drift uses the same candidate path rules as `build_git_snapshot`.
+
 ### DEF-004: Defer conditional rerank and index hygiene for eval/doc artifacts
 - **date:** 2026-07-07 · **status:** active · **triggered_by:** `DIS-001` · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-011`, `DEC-008`
 - **decision:** Defer implementation. Interim guidance: exclude `docs/*_results*.json` from user indexes where possible; consider `RERANK_ENABLED=false` or BGE override if latency/precision hurt.

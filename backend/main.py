@@ -636,6 +636,31 @@ async def upload_repo(conversation_id: str, file: UploadFile = File(...)):
             pass
 
 
+@app.post("/api/conversations/{conversation_id}/reindex")
+async def reindex_snapshot(conversation_id: str):
+    """Re-run indexing on the existing conversation snapshot (ZIP upload dir)."""
+    root = Path("temp_repos") / conversation_id
+    if not root.is_dir():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": f"No snapshot found for conversation {conversation_id}. Upload a ZIP or reindex from git.",
+            },
+        )
+    try:
+        result = index_repo_dir(root, conversation_id)
+        return {"status": "success", "message": result}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Failed to reindex snapshot: {e}",
+            },
+        )
+
+
 @app.post("/api/conversations/{conversation_id}/reindex_git")
 async def reindex_git(conversation_id: str, include_untracked: bool | None = None, repo_root: str | None = None):
     """
@@ -678,19 +703,39 @@ async def reindex_git(conversation_id: str, include_untracked: bool | None = Non
 
 
 @app.get("/api/index_manifest")
-async def index_manifest(conversation_id: str | None = None):
+async def index_manifest(conversation_id: str | None = None, repo_root: str | None = None):
     """Return index manifest with per-conversation 'changed since last index' deltas."""
     provider = get_rag_provider_dep()
+    settings_local = load_runtime_settings()
+    live_root = None
+    root_candidate = repo_root or settings_local.get("repo_root")
+    if root_candidate:
+        candidate = Path(root_candidate).resolve()
+        if candidate.is_dir():
+            live_root = candidate
+
     if conversation_id:
         manifest = _load_manifest()
         entry = manifest.get(conversation_id)
+        delta = provider.compute_index_delta(conversation_id, repo_root=live_root)
         if entry is None:
-            raise HTTPException(status_code=404, detail="Conversation not indexed")
+            return {
+                "conversation_id": conversation_id,
+                "has_index": False,
+                "changed_since_index": delta,
+            }
         return {
             **entry,
-            "changed_since_index": provider.compute_index_delta(conversation_id),
+            "changed_since_index": delta,
         }
-    return provider.get_manifest_with_deltas()
+
+    enriched = provider.get_manifest_with_deltas()
+    if live_root:
+        for conv_id in list(enriched.keys()):
+            enriched[conv_id]["changed_since_index"] = provider.compute_index_delta(
+                conv_id, repo_root=live_root
+            )
+    return enriched
 
 
 @app.get("/api/settings")

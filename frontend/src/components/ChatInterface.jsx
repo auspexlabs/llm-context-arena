@@ -215,6 +215,8 @@ export default function ChatInterface({
   const messagesContainerRef = useRef(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [reindexStatus, setReindexStatus] = useState('');
+  const [indexFreshness, setIndexFreshness] = useState(null);
+  const [isReindexing, setIsReindexing] = useState(false);
   const [focusedTarget, setFocusedTarget] = useState(null);
   const stage1Ref = useRef(null);
   const [currentModeProgress, setCurrentModeProgress] = useState(modeProgress || { current: 0, total: 0, label: '' });
@@ -368,24 +370,57 @@ export default function ChatInterface({
     setPendingScrollIndex(null);
   }, [pendingScrollIndex]);
 
+  const formatIndexedAgo = (unixSeconds) => {
+    if (!unixSeconds) return 'never';
+    const diffSec = Math.max(0, Math.floor(Date.now() / 1000 - unixSeconds));
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  };
+
+  const describeIndexDrift = (delta) => {
+    if (!delta) return '';
+    const drift = delta.git_stale && delta.git_drift ? delta.git_drift : delta;
+    const parts = [];
+    if (drift.added?.length) parts.push(`${drift.added.length} added`);
+    if (drift.changed?.length) parts.push(`${drift.changed.length} changed`);
+    if (drift.removed?.length) parts.push(`${drift.removed.length} removed`);
+    return parts.join(', ');
+  };
+
+  const refreshIndexFreshness = () => {
+    if (!conversation?.id) return;
+    api
+      .getIndexManifest(conversation.id, repoRoot)
+      .then((manifest) => setIndexFreshness(manifest?.changed_since_index || manifest))
+      .catch((err) => console.error('Failed to load index freshness', err));
+  };
+
   const refreshRepoTree = () => {
     if (!conversation?.id) return;
     api
       .getRepoTree(conversation.id)
       .then((tree) => setRepoTree(tree))
       .catch((err) => console.error('Failed to load repo tree', err));
+    refreshIndexFreshness();
   };
 
-  const handleReindexGit = async () => {
-    if (!conversation?.id) return;
+  const handleReindex = async () => {
+    if (!conversation?.id || isReindexing) return;
+    setIsReindexing(true);
     try {
       setReindexStatus('Reindexing…');
-      const resp = await api.reindexGit(conversation.id, repoRoot);
+      const resp = repoRoot
+        ? await api.reindexGit(conversation.id, repoRoot)
+        : await api.reindexSnapshot(conversation.id);
       setReindexStatus(resp.message || 'Reindexed.');
       refreshRepoTree();
     } catch (err) {
-      console.error('Failed to reindex git', err);
+      console.error('Failed to reindex', err);
       setReindexStatus(err.message || 'Reindex failed');
+    } finally {
+      setIsReindexing(false);
     }
   };
 
@@ -630,8 +665,21 @@ export default function ChatInterface({
     setRepoTree([]);
     setManualSelections([]);
     setReindexStatus('');
+    setIndexFreshness(null);
     refreshRepoTree();
   }, [conversation?.id]);
+
+  useEffect(() => {
+    if (!conversation?.id) return undefined;
+    refreshIndexFreshness();
+    const timer = setInterval(refreshIndexFreshness, 60000);
+    const onFocus = () => refreshIndexFreshness();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [conversation?.id, repoRoot]);
 
   const handleAddFileContext = async (path) => {
     try {
@@ -689,16 +737,60 @@ export default function ChatInterface({
     );
   }
 
+  const indexDelta = indexFreshness;
+  const indexIsStale = !!indexDelta?.needs_reindex;
+  const indexMissing = indexDelta && indexDelta.has_index === false;
+  const driftSummary = describeIndexDrift(indexDelta);
+  const indexedAgo = formatIndexedAgo(indexDelta?.indexed_at);
+  const staleReason =
+    indexDelta?.git_stale
+      ? 'your git repo has changed since the last index'
+      : indexDelta?.snapshot_stale
+        ? 'the indexed snapshot no longer matches the last index'
+        : indexMissing
+          ? 'no codebase is indexed for this conversation'
+          : 'the codebase index is out of date';
+
   return (
     <div className={`chat-interface theme-${theme}`}>
+      {(indexIsStale || indexMissing) && (
+        <div className={`index-freshness-banner ${indexMissing ? 'missing' : 'stale'}`}>
+          <div className="index-freshness-copy">
+            <strong>{indexMissing ? 'No codebase indexed' : 'Code index out of date'}</strong>
+            <span>
+              {indexMissing
+                ? 'Upload a ZIP or reindex from git before relying on retrieval.'
+                : `${staleReason}${driftSummary ? ` (${driftSummary})` : ''}. Last indexed ${indexedAgo}.`}
+            </span>
+          </div>
+          {!indexMissing && (
+            <button
+              type="button"
+              className="index-freshness-action"
+              onClick={handleReindex}
+              disabled={isReindexing || isLoading}
+            >
+              {isReindexing ? 'Reindexing…' : repoRoot ? 'Reindex from git' : 'Reindex snapshot'}
+            </button>
+          )}
+        </div>
+      )}
       <div className="top-grid">
         <div className="controls-column">
           <div className="controls-row">
             <RepoDropzone conversationId={conversation.id} onIndexed={refreshRepoTree} />
             <div className="repo-actions inline">
-              <button type="button" className="context-toggle" onClick={handleReindexGit}>
-                Reindex from git
+              <button
+                type="button"
+                className="context-toggle"
+                onClick={handleReindex}
+                disabled={isReindexing || isLoading}
+              >
+                {repoRoot ? 'Reindex from git' : 'Reindex snapshot'}
               </button>
+              {indexDelta?.has_index && !indexIsStale && (
+                <span className="index-freshness-ok">Indexed {indexedAgo}</span>
+              )}
               {reindexStatus && <span className="reindex-status">{reindexStatus}</span>}
               {repoRoot && (
                 <span className="reindex-root">Root: {repoRoot}</span>

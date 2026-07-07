@@ -58,6 +58,24 @@ def files_meta_list(entries: Dict[str, FileManifestEntry]) -> List[dict]:
     ]
 
 
+def scan_paths_metadata(root_dir: Path, relative_paths: List[str]) -> Dict[str, FileManifestEntry]:
+    """Build metadata for explicit relative paths under root (git candidate scan)."""
+    entries: Dict[str, FileManifestEntry] = {}
+    for rel in relative_paths:
+        rel_norm = rel.replace("\\", "/")
+        src = root_dir / rel_norm
+        if not src.is_file():
+            continue
+        try:
+            stat = src.stat()
+            entries[rel_norm] = FileManifestEntry(
+                path=rel_norm, bytes=stat.st_size, mtime=stat.st_mtime
+            )
+        except OSError:
+            continue
+    return entries
+
+
 def diff_manifest(
     indexed_files: Optional[List[dict]],
     current_files: Dict[str, FileManifestEntry],
