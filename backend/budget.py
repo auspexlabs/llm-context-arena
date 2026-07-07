@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple, Callable, Awaitable
 from .config import (
     ARENA_MODELS,
     MODEL_CONTEXT_LIMITS,
+    DEFAULT_MODEL_CONTEXT_LIMIT,
     CONTEXT_SAFETY_MARGIN,
     OUTPUT_TOKEN_ALLOWANCE,
     CHAIRMAN_MODEL,
@@ -69,16 +70,7 @@ class BudgetAllocator:
         Returns:
             ModelBudget with calculated available tokens
         """
-        limit = self.context_limits.get(model_id, 0)
-        if not limit:
-            # Unknown model - return conservative budget
-            return ModelBudget(
-                model_id=model_id,
-                context_limit=0,
-                safety_margin=self.safety_margin,
-                available_tokens=0,
-                requires_summarization=False,
-            )
+        limit = self.context_limits.get(model_id) or DEFAULT_MODEL_CONTEXT_LIMIT
 
         budget = int(limit * self.safety_margin) - self.output_allowance
         if budget_override:

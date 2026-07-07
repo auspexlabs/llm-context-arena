@@ -3,6 +3,7 @@
 import pytest
 
 from backend.budget import BudgetAllocator, ModelBudget
+from backend.config import DEFAULT_MODEL_CONTEXT_LIMIT
 
 
 class TestBudgetAllocator:
@@ -31,11 +32,12 @@ class TestBudgetAllocator:
         assert budget.available_tokens == 81000
 
     def test_calculate_budget_unknown_model(self, allocator):
-        """Unknown model should return zero budget."""
+        """Unknown model should fall back to DEFAULT_MODEL_CONTEXT_LIMIT."""
         budget = allocator.calculate_budget("unknown-model")
         assert budget.model_id == "unknown-model"
-        assert budget.context_limit == 0
-        assert budget.available_tokens == 0
+        assert budget.context_limit == DEFAULT_MODEL_CONTEXT_LIMIT
+        expected = int(DEFAULT_MODEL_CONTEXT_LIMIT * 0.85) - 4000
+        assert budget.available_tokens == expected
 
     def test_calculate_budget_with_override(self, allocator):
         """Budget override should cap available tokens."""

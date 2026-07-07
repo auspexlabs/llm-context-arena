@@ -13,26 +13,44 @@ load_dotenv()
 # OpenRouter API key
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Arena models - list of OpenRouter model identifiers
+# Arena models — OpenRouter identifiers (default: free tier for cost-efficient councils)
 ARENA_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen3-coder:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "openai/gpt-oss-120b:free",
+    "cohere/north-mini-code:free",
+    "tencent/hy3:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "poolside/laguna-xs-2.1:free",
 ]
 
-# Chairman model - synthesizes final response
-CHAIRMAN_MODEL = "openai/gpt-5.1"
+# Chairman — one synthesis call per run; use a larger paid model
+CHAIRMAN_MODEL = "google/gemini-2.5-pro"
 
 # Backwards compatibility alias
 COUNCIL_MODELS = ARENA_MODELS  # Deprecated: use ARENA_MODELS
 
 # Model context limits (input tokens) for budgeting; tweak via env overrides
+DEFAULT_MODEL_CONTEXT_LIMIT = int(os.getenv("DEFAULT_MODEL_CONTEXT_LIMIT", "131072"))
+
 MODEL_CONTEXT_LIMITS = {
-    "openai/gpt-5.1": int(os.getenv("CTX_LIMIT_GPT_5_1", "400000")),
-    "google/gemini-3-pro-preview": int(os.getenv("CTX_LIMIT_GEMINI_3_PRO_PREVIEW", "1048576")),
+    # Free arena models
+    "meta-llama/llama-3.3-70b-instruct:free": 131072,
+    "qwen/qwen3-coder:free": 1048576,
+    "nvidia/nemotron-3-super-120b-a12b:free": 1000000,
+    "openai/gpt-oss-120b:free": 131072,
+    "cohere/north-mini-code:free": 256000,
+    "tencent/hy3:free": 262144,
+    "nousresearch/hermes-3-llama-3.1-405b:free": 131072,
+    "qwen/qwen3-next-80b-a3b-instruct:free": 262144,
+    "poolside/laguna-xs-2.1:free": 262144,
+    # Chairman + common paid overrides
+    "google/gemini-2.5-pro": int(os.getenv("CTX_LIMIT_GEMINI_2_5_PRO", "1048576")),
+    "google/gemini-3.1-pro-preview": 1048576,
     "anthropic/claude-sonnet-4.5": int(os.getenv("CTX_LIMIT_CLAUDE_SONNET_4_5", "1000000")),
-    "x-ai/grok-4": int(os.getenv("CTX_LIMIT_GROK_4", "256000")),
+    "openai/gpt-5.1": int(os.getenv("CTX_LIMIT_GPT_5_1", "400000")),
 }
 
 # Safety margin + output allowance (tokens) for budgeting

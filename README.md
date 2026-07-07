@@ -213,14 +213,15 @@ Control behavior inline with your query:
 Edit `backend/config.py` or use the settings panel:
 
 ```python
+# Free/cheap arena members; chairman is a single paid synthesis call
 ARENA_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen3-coder:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    # ... see backend/config.py for full default list
 ]
 
-CHAIRMAN_MODEL = "openai/gpt-5.1"
+CHAIRMAN_MODEL = "google/gemini-2.5-pro"
 ```
 
 ### Environment
@@ -249,12 +250,11 @@ CONTEXT_CHUNK_CAP=60
 
 ### Context Limits
 
+Per-model limits live in `backend/config.py` (`MODEL_CONTEXT_LIMITS`). Unknown models fall back to `DEFAULT_MODEL_CONTEXT_LIMIT` (131,072). Chairman default:
+
 | Model | Default Context | Env Override |
 |-------|-----------------|--------------|
-| `openai/gpt-5.1` | 400,000 | `CTX_LIMIT_GPT_5_1` |
-| `google/gemini-3-pro-preview` | 1,048,576 | `CTX_LIMIT_GEMINI_3_PRO_PREVIEW` |
-| `anthropic/claude-sonnet-4.5` | 1,000,000 | `CTX_LIMIT_CLAUDE_SONNET_4_5` |
-| `x-ai/grok-4` | 256,000 | `CTX_LIMIT_GROK_4` |
+| `google/gemini-2.5-pro` | 1,048,576 | `CTX_LIMIT_GEMINI_2_5_PRO` |
 
 Safety margin: 85% (`CONTEXT_SAFETY_MARGIN=0.85`)
 Output allowance: 4000 tokens (`OUTPUT_TOKEN_ALLOWANCE=4000`)
