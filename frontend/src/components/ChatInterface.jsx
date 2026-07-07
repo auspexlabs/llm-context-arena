@@ -6,9 +6,9 @@ import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
 import { RoundTrack } from './RoundTrack';
+import ArenaStatusBar from './ArenaStatusBar';
+import TurnCostLine from './TurnCostLine';
 import {
-  formatTokenCount,
-  formatUsd,
   sessionCostFromMessages,
   sumStepsCost,
   turnCostFromMessage,
@@ -778,8 +778,20 @@ export default function ChatInterface({
           ? 'no codebase is indexed for this conversation'
           : 'the codebase index is out of date';
 
+  const progressLabel = formatProgressLabel(currentModeProgress);
+
   return (
     <div className={`chat-interface theme-${theme}`}>
+      <ArenaStatusBar
+        mode={conversation.mode}
+        title={conversation.title}
+        isLoading={isLoading}
+        modeProgress={currentModeProgress}
+        progressLabel={progressLabel}
+        turnCost={turnCost}
+        sessionCost={sessionCost}
+      />
+
       {(indexIsStale || indexMissing) && (
         <div className={`index-freshness-banner ${indexMissing ? 'missing' : 'stale'}`}>
           <div className="index-freshness-copy">
@@ -866,23 +878,6 @@ export default function ChatInterface({
           </div>
         </div>
         <div className="mode-summary-card">
-          <div className="mode-cost-row">
-            <div className="mode-badge large">Mode: {conversation.mode || 'council'}</div>
-            <div className="cost-tracker" title="OpenRouter usage for this conversation">
-              <span className="cost-tracker-label">Cost</span>
-              <span className="cost-tracker-turn">
-                Turn {formatUsd(turnCost.cost_usd)}
-              </span>
-              <span className="cost-tracker-sep">·</span>
-              <span className="cost-tracker-session">
-                Session {formatUsd(sessionCost.cost_usd)}
-              </span>
-              <span className="cost-tracker-meta">
-                {formatTokenCount(sessionCost.total_tokens)} tok
-                {sessionCost.calls ? ` · ${sessionCost.calls} calls` : ''}
-              </span>
-            </div>
-          </div>
           <div className="mode-summary-text">
             {modeDescriptions[conversation.mode] || 'Multi-step arena orchestration.'}
           </div>
@@ -934,26 +929,6 @@ export default function ChatInterface({
             ))}
           </div>
         )}
-        {currentModeProgress.total > 0 && (
-          <div className="mode-progress">
-            <div className="mode-progress-bar">
-              <div
-                className="mode-progress-fill"
-                style={{
-                  width: `${currentModeProgress.total ? Math.min(
-                    100,
-                    Math.round(((currentModeProgress.current || 0) / currentModeProgress.total) * 100)
-                  ) : 0}%`,
-                }}
-              />
-            </div>
-            <div className="mode-progress-label">
-              {formatProgressLabel(currentModeProgress) ||
-                `Step ${currentModeProgress.current}/${currentModeProgress.total}`}
-            </div>
-          </div>
-        )}
-
         {conversation.messages.length === 0 ? (
           <div className="empty-state">
             <h2>Start a conversation</h2>
@@ -1031,6 +1006,8 @@ export default function ChatInterface({
                     </div>
                   )}
                   {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+
+                  <TurnCostLine message={msg} />
 
                   <ContextPanel sources={msg.contextSources || msg.context_sources} />
                 </div>

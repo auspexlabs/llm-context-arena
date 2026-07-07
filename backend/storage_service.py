@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import DATA_DIR
+from .cost_tracking import summarize_conversation_cost
 
 
 class StorageService:
@@ -96,12 +97,15 @@ class StorageService:
                 path = self.data_dir / filename
                 with open(path, "r") as f:
                     data = json.load(f)
+                    cost_summary = summarize_conversation_cost(data.get("messages", []))
                     conversations.append({
                         "id": data["id"],
                         "created_at": data["created_at"],
                         "title": data.get("title", "New Conversation"),
                         "message_count": len(data["messages"]),
                         "mode": data.get("mode", "council"),
+                        "total_cost_usd": cost_summary.get("conversation_cost_usd", 0.0),
+                        "total_tokens": cost_summary.get("total_tokens", 0),
                     })
 
         conversations.sort(key=lambda x: x["created_at"], reverse=True)

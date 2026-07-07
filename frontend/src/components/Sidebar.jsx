@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { formatUsd } from '../costUtils';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -203,6 +204,14 @@ export default function Sidebar({
               </div>
               <div className="conversation-meta">
                 {conv.message_count} messages · {conv.mode || 'baseline'}
+                {conv.message_count >= 2 && (
+                  <span className="conversation-cost">
+                    · {formatUsd(conv.total_cost_usd || 0)}
+                    {typeof conv.total_tokens === 'number'
+                      ? ` · ${conv.total_tokens.toLocaleString()} tok`
+                      : ''}
+                  </span>
+                )}
               </div>
             </div>
           ))

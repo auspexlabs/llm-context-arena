@@ -93,6 +93,15 @@
   font-size: 12px;
 }
 
+.conversation-cost {
+  font-variant-numeric: tabular-nums;
+  color: #6b7f9e;
+}
+
+.theme-dark .conversation-cost {
+  color: var(--muted);
+}
+
 .settings-hint {
   font-size: 12px;
   color: #777;

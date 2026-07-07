@@ -15,6 +15,7 @@
   --muted: #555;
   --border: #e0e0e0;
   --accent: #4a90e2;
+  --status-bar-bg: var(--panel);
 }
 
 .theme-dark {
