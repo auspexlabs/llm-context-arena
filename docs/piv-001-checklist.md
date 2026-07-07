@@ -4,6 +4,22 @@ Companion to [`piv-001-agent-control-plane.md`](piv-001-agent-control-plane.md).
 
 ---
 
+## BLOCKER — Mode turn routing (DIS-002) — do before agent API
+
+See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). Advanced modes run correctly in `arena.py` but API/UI still use Council `stage1→stage2→stage3` envelope.
+
+- [ ] **Streaming:** per-step SSE (`step_complete`), not one `stage1_complete` after full runner
+- [ ] **Backend return contract:** separate `execution.steps` from council `stage1`/`stage2`; stop stuffing fight/stacks/RR into `stage1`
+- [ ] **Progress:** unified `step_index`/`step_total`; fix parallel `stage1_collect_responses` counter; every progress event carries `step`
+- [ ] **UI mode router:** council → Stage1/2/3; advanced modes → RoundTrack + role panels (hide misleading Stage1)
+- [ ] **RoundTrack sync:** stable step ids; fix focus jump to Stage1/tab (`__idx`)
+- [ ] **Fight-only transcript:** generalize or remove duplicate partial UI
+- [ ] **Council metadata.steps:** include real rankings content or drop empty stub
+
+**Do not build `POST /turns/advance` on the current tuple shape — agents would inherit the lie.**
+
+---
+
 ## Phase 0 — Quick wins (unblock prototyping)
 
 ### Bugs / jank (watch mode blockers)

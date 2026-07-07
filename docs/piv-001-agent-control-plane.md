@@ -74,8 +74,10 @@ This is distinct from DEF-003 (`expand_trace`): await is **any** human checkpoin
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Prerequisite (DIS-002):** fix mode turn routing — advanced modes must not masquerade as Council `stage1`. See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md).
+
 **Phase 0 (now):** document + expose existing endpoints as tools; fix watch-mode bugs.  
-**Phase 1:** turn model + council step API + shared `run_turn()` service.  
+**Phase 1:** turn model + council step API + shared `run_turn()` service — **on corrected execution contract only**.  
 **Phase 2:** `await_user` + watch-first UI shell.  
 **Phase 3:** all modes checkpointed + `expand_trace` (resolves DEF-003) + agent SDK.
 

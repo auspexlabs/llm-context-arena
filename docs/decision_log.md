@@ -257,6 +257,11 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **rationale:** Backend delta detection existed but was API-only; git users could edit files with `has_changes=false` on the snapshot. Users need an obvious in-product signal before trusting retrieval.
 - **impact:** No query-time auto-reindex (user-triggered only). Git drift uses the same candidate path rules as `build_git_snapshot`.
 
+### DIS-002: Advanced mode turns routed through Council-shaped API/UI — broken
+- **date:** 2026-07-07 · **status:** observed · **triggered_by:** PIV-001 planning; user report that turns may be broken on advanced modes · **docs_updated:** `docs/decision_log.md`, `docs/dis-002-mode-turn-routing.md`, `docs/piv-001-checklist.md` · **related:** `PIV-001`, `DEC-007` · **blocks:** `PIV-001` Phase 1+ agent step API
+- **finding:** `run_mode_fight` / `stacks` / `round_robin` / `complex_*` return full playthrough as `stage1_results` with empty `stage2`. Streaming holds `stage1_complete` until entire runner finishes. UI renders all steps through Council `Stage1` (“Individual Responses”). Live timeline starved (`emit_steps=False`, missing `step` on progress events). RoundTrack grouping exists but desyncs from stage tabs.
+- **implication:** Multi-turn protocols work in backend logic; presentation and API contract do not. Fix DIS-002 before agent `advance` API or observatory UI redesign.
+
 ### PIV-001: Agent control plane — agents drive, UI observes, humans await
 - **date:** 2026-07-07 · **status:** accepted · **triggered_by:** product direction review; agent-orchestration vision for multi-model deliberation + CodeRAG · **docs_updated:** `docs/decision_log.md`, `docs/piv-001-agent-control-plane.md`, `docs/piv-001-checklist.md` · **related:** `DEC-001`, `DEC-007`, `DEC-010`, `DEC-011`, `DEC-013`, `DEF-003`, `DEF-004` · **doc:** [`docs/piv-001-agent-control-plane.md`](piv-001-agent-control-plane.md)
 - **pivot:** Arena becomes an **agent control plane** (turn/step/resume APIs, structured `ArenaExecution`, index tools). UI becomes an **observatory**; humans enter via **`await_user`** checkpoints, not as default operator every turn. Disagreement (stage 1 + stage 2 rankings) stays first-class signal for drivers.
