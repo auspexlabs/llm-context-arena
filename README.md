@@ -287,6 +287,7 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 
 - [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md) — RAG setup, env vars, retrieval topology, indexing APIs
 - [docs/decision_log.md](docs/decision_log.md) — append-only architecture / policy ledger (ADRLight-style)
+- [docs/piv-001-agent-control-plane.md](docs/piv-001-agent-control-plane.md) — product pivot: agent control plane, UI as observatory
 - [PLAN.md](PLAN.md) — Feature roadmap and mode specifications
 - [COUNCIL_OG_README.md](COUNCIL_OG_README.md) — Original Karpathy README
 

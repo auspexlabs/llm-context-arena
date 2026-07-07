@@ -9,8 +9,8 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 
 - **Append-only.** Never delete or rewrite a past entry. The only edit allowed on
   an old entry is a **status update** (e.g. `accepted` → `superseded by DEC-007`).
-- **Seven independent ID spaces**, each zero-padded and monotonic: `DEC`, `DEF`,
-  `HYP`, `DIS`, `INC`, `OUT`, `BOT`. The ledger allocates IDs — even an external incident
+- **Eight independent ID spaces**, each zero-padded and monotonic: `DEC`, `DEF`,
+  `HYP`, `DIS`, `INC`, `OUT`, `BOT`, `PIV`. The ledger allocates IDs — even an external incident
   gets a stub here.
 - **Link entries** to form the causal DAG: `triggered_by` (causal origin),
   `supersedes` (DEC replaces DEC), `resolves` (DEC closes a DEF), `promotes`
@@ -30,6 +30,7 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 | **INC** | Root cause of a defect found in investigation | `open` → remediated via DEC |
 | **OUT** | Service-impact event (downtime, data loss) | `open` → `closed` at recovery |
 | **BOT** | Human intuition corrected the AI(s) — "caught the bots" | `logged` (terminal) |
+| **PIV** | Product / architectural pivot — new north star | `accepted` → `superseded by PIV-###` (rare) |
 
 ### Templates
 ```
@@ -65,6 +66,13 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - correction: the user's intervention
 - verified:   what the data/analysis showed afterward
 - lesson:     the failure mode to watch
+
+### PIV-###: <pivot title>
+- date / status / triggered_by / docs_updated
+- pivot:     New north star in one paragraph; what product posture changes
+- related:   Prior DEC/DEF this builds on (not supersedes unless stated)
+- defers:    What remains unchanged for now
+- doc:       Link to `docs/piv-###-*.md` for full vision + checklist
 ```
 
 ---
@@ -248,6 +256,11 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
   - **ChatInterface** polls manifest on load/focus/60s; shows a banner when `needs_reindex` with counts + last-indexed time; **Reindex** button calls git reindex when `repo_root` is set, else snapshot reindex.
 - **rationale:** Backend delta detection existed but was API-only; git users could edit files with `has_changes=false` on the snapshot. Users need an obvious in-product signal before trusting retrieval.
 - **impact:** No query-time auto-reindex (user-triggered only). Git drift uses the same candidate path rules as `build_git_snapshot`.
+
+### PIV-001: Agent control plane — agents drive, UI observes, humans await
+- **date:** 2026-07-07 · **status:** accepted · **triggered_by:** product direction review; agent-orchestration vision for multi-model deliberation + CodeRAG · **docs_updated:** `docs/decision_log.md`, `docs/piv-001-agent-control-plane.md`, `docs/piv-001-checklist.md` · **related:** `DEC-001`, `DEC-007`, `DEC-010`, `DEC-011`, `DEC-013`, `DEF-003`, `DEF-004` · **doc:** [`docs/piv-001-agent-control-plane.md`](piv-001-agent-control-plane.md)
+- **pivot:** Arena becomes an **agent control plane** (turn/step/resume APIs, structured `ArenaExecution`, index tools). UI becomes an **observatory**; humans enter via **`await_user`** checkpoints, not as default operator every turn. Disagreement (stage 1 + stage 2 rankings) stays first-class signal for drivers.
+- **defers:** Full UI redesign, multi-agent supervisors, DEF-003 `expand_trace`, DEF-004 index hygiene — sequenced in `piv-001-checklist.md` Phases 0–3.
 
 ### DEF-004: Defer conditional rerank and index hygiene for eval/doc artifacts
 - **date:** 2026-07-07 · **status:** active · **triggered_by:** `DIS-001` · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-011`, `DEC-008`
