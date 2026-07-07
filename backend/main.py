@@ -258,6 +258,7 @@ async def send_message(
             "chairman_model": chairman_model,
             "arena_models": arena_models,
             "steps": metadata.get("steps"),
+            "cost": metadata.get("cost"),
             "context_from_last_chair": context_from_last_chair,
         },
     )
@@ -401,6 +402,7 @@ async def send_message_stream(
                             "aggregate_rankings": mode_metadata.get(
                                 "aggregate_rankings"
                             ),
+                            "cost": mode_metadata.get("cost"),
                         },
                     }
                 )
@@ -482,6 +484,7 @@ async def send_message_stream(
                     "chairman_model": chairman_model_local,
                     "arena_models": arena_models_local,
                     "steps": mode_metadata.get("steps"),
+                    "cost": mode_metadata.get("cost"),
                     "context_from_last_chair": context_from_last_chair,
                 },
             )

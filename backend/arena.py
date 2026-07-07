@@ -5,6 +5,7 @@ import time
 from typing import List, Dict, Any, Tuple, Optional, Callable
 from .openrouter import query_models_parallel, query_model
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
+from .cost_tracking import apply_usage_fields, sum_usage_fields, summarize_turn_cost
 
 COUNCIL_MODES = frozenset({"council", "baseline"})
 
@@ -137,15 +138,18 @@ async def stage1_collect_responses(
         )
         if resp is None:
             return None
-        result = {
-            "model": model,
-            "response": resp.get("content", ""),
-            "role": "answer",
-            "prompt_preview": individual_prompt[:500],
-            "prompt_full": individual_prompt,
-            "est_tokens": max(len(individual_prompt) // 4, 1),
-            "context_tokens": context_tokens,
-        }
+        result = apply_usage_fields(
+            {
+                "model": model,
+                "response": resp.get("content", ""),
+                "role": "answer",
+                "prompt_preview": individual_prompt[:500],
+                "prompt_full": individual_prompt,
+                "est_tokens": max(len(individual_prompt) // 4, 1),
+                "context_tokens": context_tokens,
+            },
+            resp,
+        )
         async with counter_lock:
             step_counter[0] += 1
             finish_idx = step_counter[0]
@@ -232,11 +236,16 @@ Now provide your evaluation and ranking:"""
         if response is not None:
             full_text = response.get('content', '')
             parsed = parse_ranking_from_text(full_text)
-            stage2_results.append({
-                "model": model,
-                "ranking": full_text,
-                "parsed_ranking": parsed
-            })
+            stage2_results.append(
+                apply_usage_fields(
+                    {
+                        "model": model,
+                        "ranking": full_text,
+                        "parsed_ranking": parsed,
+                    },
+                    response,
+                )
+            )
 
     return stage2_results, label_to_model
 
@@ -300,14 +309,17 @@ Provide a clear, well-reasoned final answer that represents the arena's collecti
             "response": "Error: Unable to generate final synthesis."
         }
 
-    return {
-        "model": chairman_model,
-        "response": response.get('content', ''),
-        "role": "chair_final",
-        "prompt_preview": chairman_prompt[:500],
-        "est_tokens": max(len(chairman_prompt) // 4, 1),
-        "context_tokens": 0,
-    }
+    return apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": response.get("content", ""),
+            "role": "chair_final",
+            "prompt_preview": chairman_prompt[:500],
+            "est_tokens": max(len(chairman_prompt) // 4, 1),
+            "context_tokens": 0,
+        },
+        response,
+    )
 
 
 def parse_ranking_from_text(ranking_text: str) -> List[str]:
@@ -466,8 +478,11 @@ async def run_full_arena(
     normalized = normalize_arena_results(
         mode, stage1_results, stage2_results, stage3_result, metadata
     )
+    meta_out = normalized[3]
+    steps = meta_out.get("steps") or []
+    if steps and "cost" not in meta_out:
+        meta_out["cost"] = summarize_turn_cost(steps)
     if progress_cb:
-        steps = normalized[3].get("steps") or []
         await progress_cb(
             {
                 "type": "execution_complete",
@@ -476,6 +491,7 @@ async def run_full_arena(
                     "step_total": len(steps),
                     "steps": steps,
                     "council_mode": is_council_mode(mode),
+                    "cost": meta_out.get("cost"),
                 },
             }
         )
@@ -534,6 +550,7 @@ async def run_mode_council(
         "prompt_preview": "Peer rankings aggregation",
         "context_tokens": 0,
         "est_tokens": 0,
+        **sum_usage_fields(stage2_results),
     }
     await emit_step_complete(
         progress_cb, rankings_step, len(stage1_results) + 1, total_steps
@@ -548,15 +565,16 @@ async def run_mode_council(
     chair_step = dict(stage3_result, role="chair_final")
     await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
 
+    steps = [
+        dict(s, context_tokens=s.get("context_tokens", context_tokens))
+        for s in stage1_results
+    ] + [rankings_step, chair_step]
     metadata = {
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "mode": "council",
-        "steps": [
-            dict(s, context_tokens=s.get("context_tokens", context_tokens))
-            for s in stage1_results
-        ]
-        + [rankings_step, chair_step],
+        "steps": steps,
+        "cost": summarize_turn_cost(steps),
     }
     return stage1_results, stage2_results, stage3_result, metadata
 
@@ -600,16 +618,19 @@ async def run_mode_round_robin(
             elapsed_ms = int((time.time() - start) * 1000)
             text = resp.get("content", "") if resp else ""
             ctx_tokens = context_map.get(model, context_map.get("__base__", context_tokens))
-            draft_step = {
-                "model": model,
-                "response": text,
-                "role": f"draft_p{iteration}_t{turn}",
-                "prompt_preview": full_prompt[:500],
-                "prompt_full": full_prompt,
-                "est_tokens": max(len(full_prompt) // 4, 1),
-                "context_tokens": ctx_tokens,
-                "duration_ms": elapsed_ms,
-            }
+            draft_step = apply_usage_fields(
+                {
+                    "model": model,
+                    "response": text,
+                    "role": f"draft_p{iteration}_t{turn}",
+                    "prompt_preview": full_prompt[:500],
+                    "prompt_full": full_prompt,
+                    "est_tokens": max(len(full_prompt) // 4, 1),
+                    "context_tokens": ctx_tokens,
+                    "duration_ms": elapsed_ms,
+                },
+                resp,
+            )
             drafts.append(draft_step)
             prior_text = text or prior_text
             step_idx += 1
@@ -625,22 +646,27 @@ async def run_mode_round_robin(
     start = time.time()
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
-    stage3_result = {
-        "model": chairman_model,
-        "response": chair_resp.get("content", "") if chair_resp else "No response from chairman.",
-        "role": "chair_final",
-        "prompt_preview": chair_prompt[:500],
-        "prompt_full": chair_prompt,
-        "est_tokens": max(len(chair_prompt) // 4, 1),
-        "context_tokens": context_map.get("__base__", context_tokens),
-        "duration_ms": elapsed_ms,
-    }
+    stage3_result = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": chair_resp.get("content", "") if chair_resp else "No response from chairman.",
+            "role": "chair_final",
+            "prompt_preview": chair_prompt[:500],
+            "prompt_full": chair_prompt,
+            "est_tokens": max(len(chair_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        chair_resp,
+    )
     await emit_step_complete(progress_cb, stage3_result, total_steps, total_steps)
 
+    steps = drafts + [stage3_result]
     metadata = {
         "mode": "round_robin",
-        "steps": drafts + [stage3_result],
+        "steps": steps,
         "iterations": passes,
+        "cost": summarize_turn_cost(steps),
     }
     return drafts, [], stage3_result, metadata
 
@@ -682,8 +708,7 @@ async def run_mode_fight(
     )
     answers = [
         {
-            "model": a["model"],
-            "response": a["response"],
+            **a,
             "role": "answer",
             "prompt_preview": a.get("prompt_preview"),
             "prompt_full": a.get("prompt_full", user_query),
@@ -707,16 +732,19 @@ async def run_mode_fight(
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": critique_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        critique_step = {
-            "model": ans["model"],
-            "response": resp.get("content", "") if resp else "",
-            "role": "critique",
-            "prompt_preview": critique_prompt[:500],
-            "prompt_full": critique_prompt,
-            "est_tokens": max(len(critique_prompt) // 4, 1),
-            "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
-            "duration_ms": elapsed_ms,
-        }
+        critique_step = apply_usage_fields(
+            {
+                "model": ans["model"],
+                "response": resp.get("content", "") if resp else "",
+                "role": "critique",
+                "prompt_preview": critique_prompt[:500],
+                "prompt_full": critique_prompt,
+                "est_tokens": max(len(critique_prompt) // 4, 1),
+                "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
+                "duration_ms": elapsed_ms,
+            },
+            resp,
+        )
         critiques.append(critique_step)
         step_idx += 1
         await emit_step_complete(progress_cb, critique_step, step_idx, total_steps)
@@ -735,16 +763,19 @@ async def run_mode_fight(
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": defense_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        defense_step = {
-            "model": ans["model"],
-            "response": resp.get("content", "") if resp else "",
-            "role": "defense",
-            "prompt_full": defense_prompt,
-            "prompt_preview": defense_prompt[:500],
-            "est_tokens": max(len(defense_prompt) // 4, 1),
-            "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
-            "duration_ms": elapsed_ms,
-        }
+        defense_step = apply_usage_fields(
+            {
+                "model": ans["model"],
+                "response": resp.get("content", "") if resp else "",
+                "role": "defense",
+                "prompt_full": defense_prompt,
+                "prompt_preview": defense_prompt[:500],
+                "est_tokens": max(len(defense_prompt) // 4, 1),
+                "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
+                "duration_ms": elapsed_ms,
+            },
+            resp,
+        )
         defenses.append(defense_step)
         step_idx += 1
         await emit_step_complete(progress_cb, defense_step, step_idx, total_steps)
@@ -761,20 +792,23 @@ async def run_mode_fight(
     start = time.time()
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
-    stage3_result = {
-        "model": chairman_model,
-        "response": chair_resp.get("content", "") if chair_resp else "No response from chairman.",
-        "role": "chair_final",
-        "prompt_full": chair_prompt,
-        "prompt_preview": chair_prompt[:500],
-        "est_tokens": max(len(chair_prompt) // 4, 1),
-        "context_tokens": context_map.get("__base__", context_tokens),
-        "duration_ms": elapsed_ms,
-    }
+    stage3_result = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": chair_resp.get("content", "") if chair_resp else "No response from chairman.",
+            "role": "chair_final",
+            "prompt_full": chair_prompt,
+            "prompt_preview": chair_prompt[:500],
+            "est_tokens": max(len(chair_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        chair_resp,
+    )
     await emit_step_complete(progress_cb, stage3_result, total_steps, total_steps)
 
     steps = answers + critiques + defenses + [stage3_result]
-    metadata = {"mode": "fight", "steps": steps}
+    metadata = {"mode": "fight", "steps": steps, "cost": summarize_turn_cost(steps)}
     return steps, [], stage3_result, metadata
 
 
@@ -815,7 +849,17 @@ async def run_mode_stacks(
         progress_total=total_steps,
         progress_offset=0,
     )
-    answers = [{"model": a["model"], "response": a["response"], "role": "stacks_answer", "prompt_preview": a.get("prompt_preview"), "prompt_full": a.get("prompt_full", user_query), "est_tokens": a.get("est_tokens", max(len(user_query) // 4, 1)), "context_tokens": a.get("context_tokens", context_tokens)} for a in answers]
+    answers = [
+        {
+            **a,
+            "role": "stacks_answer",
+            "prompt_preview": a.get("prompt_preview"),
+            "prompt_full": a.get("prompt_full", user_query),
+            "est_tokens": a.get("est_tokens", max(len(user_query) // 4, 1)),
+            "context_tokens": a.get("context_tokens", context_tokens),
+        }
+        for a in answers
+    ]
 
     merge_prompt = (
         f"Merge two answers while preserving optionality. Cite context if needed.\n\nA:\n{answers[0]['response']}\n\nB:\n{answers[1]['response']}"
@@ -825,7 +869,19 @@ async def run_mode_stacks(
     merged = await query_model(chairman_model, [{"role": "user", "content": merge_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     merged_text = merged.get("content", "") if merged else ""
-    merged_step = {"model": chairman_model, "response": merged_text, "role": "stacks_merge", "prompt_preview": merge_prompt[:500], "prompt_full": merge_prompt, "est_tokens": max(len(merge_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
+    merged_step = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": merged_text,
+            "role": "stacks_merge",
+            "prompt_preview": merge_prompt[:500],
+            "prompt_full": merge_prompt,
+            "est_tokens": max(len(merge_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        merged,
+    )
     cursor += 1
     await emit_step_complete(progress_cb, merged_step, cursor, total_steps)
 
@@ -838,7 +894,19 @@ async def run_mode_stacks(
         start = time.time()
         resp = await query_model(cm, [{"role": "user", "content": critique_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        critique_step = {"model": cm, "response": resp.get("content", "") if resp else "", "role": "stacks_critique", "prompt_preview": critique_prompt[:500], "prompt_full": critique_prompt, "est_tokens": max(len(critique_prompt) // 4, 1), "context_tokens": context_map.get(cm, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+        critique_step = apply_usage_fields(
+            {
+                "model": cm,
+                "response": resp.get("content", "") if resp else "",
+                "role": "stacks_critique",
+                "prompt_preview": critique_prompt[:500],
+                "prompt_full": critique_prompt,
+                "est_tokens": max(len(critique_prompt) // 4, 1),
+                "context_tokens": context_map.get(cm, context_map.get("__base__", context_tokens)),
+                "duration_ms": elapsed_ms,
+            },
+            resp,
+        )
         critiques.append(critique_step)
         cursor += 1
         await emit_step_complete(progress_cb, critique_step, cursor, total_steps)
@@ -851,7 +919,19 @@ async def run_mode_stacks(
     judge = await query_model(chairman_model, [{"role": "user", "content": judge_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     judge_text = judge.get("content", "") if judge else ""
-    judge_step = {"model": chairman_model, "response": judge_text, "role": "stacks_judge", "prompt_preview": judge_prompt[:500], "prompt_full": judge_prompt, "est_tokens": max(len(judge_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
+    judge_step = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": judge_text,
+            "role": "stacks_judge",
+            "prompt_preview": judge_prompt[:500],
+            "prompt_full": judge_prompt,
+            "est_tokens": max(len(judge_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        judge,
+    )
     cursor += 1
     await emit_step_complete(progress_cb, judge_step, cursor, total_steps)
 
@@ -864,7 +944,19 @@ async def run_mode_stacks(
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": defense_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        defense_step = {"model": ans["model"], "response": resp.get("content", "") if resp else "", "role": "stacks_defense", "prompt_preview": defense_prompt[:500], "prompt_full": defense_prompt, "est_tokens": max(len(defense_prompt) // 4, 1), "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+        defense_step = apply_usage_fields(
+            {
+                "model": ans["model"],
+                "response": resp.get("content", "") if resp else "",
+                "role": "stacks_defense",
+                "prompt_preview": defense_prompt[:500],
+                "prompt_full": defense_prompt,
+                "est_tokens": max(len(defense_prompt) // 4, 1),
+                "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
+                "duration_ms": elapsed_ms,
+            },
+            resp,
+        )
         defenses.append(defense_step)
         cursor += 1
         await emit_step_complete(progress_cb, defense_step, cursor, total_steps)
@@ -877,20 +969,23 @@ async def run_mode_stacks(
     final_resp = await query_model(chairman_model, [{"role": "user", "content": final_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     final_text = final_resp.get("content", "") if final_resp else ""
-    chair_step = {
-        "model": chairman_model,
-        "response": final_text,
-        "role": "chair_final",
-        "prompt_preview": final_prompt[:500],
-        "prompt_full": final_prompt,
-        "est_tokens": max(len(final_prompt) // 4, 1),
-        "context_tokens": context_map.get("__base__", context_tokens),
-        "duration_ms": elapsed_ms,
-    }
+    chair_step = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": final_text,
+            "role": "chair_final",
+            "prompt_preview": final_prompt[:500],
+            "prompt_full": final_prompt,
+            "est_tokens": max(len(final_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        final_resp,
+    )
     await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
 
     steps = answers + [merged_step] + critiques + [judge_step] + defenses + [chair_step]
-    metadata = {"mode": "stacks", "steps": steps}
+    metadata = {"mode": "stacks", "steps": steps, "cost": summarize_turn_cost(steps)}
     return steps, [], chair_step, metadata
 
 
@@ -930,7 +1025,19 @@ async def run_mode_complex_iterative(
             resp = await query_model(extract_model, [{"role": "user", "content": prompt}])
             elapsed_ms = int((time.time() - start) * 1000)
             text = resp.get("content", "") if resp else ""
-            extract_step = {"model": extract_model, "response": text, "role": "extract", "prompt_preview": prompt[:500], "prompt_full": prompt, "est_tokens": max(len(prompt) // 4, 1), "context_tokens": context_map.get(extract_model, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+            extract_step = apply_usage_fields(
+                {
+                    "model": extract_model,
+                    "response": text,
+                    "role": "extract",
+                    "prompt_preview": prompt[:500],
+                    "prompt_full": prompt,
+                    "est_tokens": max(len(prompt) // 4, 1),
+                    "context_tokens": context_map.get(extract_model, context_map.get("__base__", context_tokens)),
+                    "duration_ms": elapsed_ms,
+                },
+                resp,
+            )
             steps.append(extract_step)
             summary = text or summary
             step_idx += 1
@@ -941,7 +1048,19 @@ async def run_mode_complex_iterative(
             resp = await query_model(expand_model, [{"role": "user", "content": prompt}])
             elapsed_ms = int((time.time() - start) * 1000)
             text = resp.get("content", "") if resp else ""
-            expand_step = {"model": expand_model, "response": text, "role": "expand", "prompt_preview": prompt[:500], "prompt_full": prompt, "est_tokens": max(len(prompt) // 4, 1), "context_tokens": context_map.get(expand_model, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+            expand_step = apply_usage_fields(
+                {
+                    "model": expand_model,
+                    "response": text,
+                    "role": "expand",
+                    "prompt_preview": prompt[:500],
+                    "prompt_full": prompt,
+                    "est_tokens": max(len(prompt) // 4, 1),
+                    "context_tokens": context_map.get(expand_model, context_map.get("__base__", context_tokens)),
+                    "duration_ms": elapsed_ms,
+                },
+                resp,
+            )
             steps.append(expand_step)
             suggested = text or suggested
             step_idx += 1
@@ -952,9 +1071,26 @@ async def run_mode_complex_iterative(
     final_resp = await query_model(chairman_model, [{"role": "user", "content": final_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     final_text = final_resp.get("content", "") if final_resp else ""
-    chair_step = {"model": chairman_model, "response": final_text, "role": "chair_final", "prompt_preview": final_prompt[:500], "prompt_full": final_prompt, "est_tokens": max(len(final_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
+    chair_step = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": final_text,
+            "role": "chair_final",
+            "prompt_preview": final_prompt[:500],
+            "prompt_full": final_prompt,
+            "est_tokens": max(len(final_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        final_resp,
+    )
     await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
-    metadata = {"mode": "complex_iterative", "steps": steps + [chair_step]}
+    all_steps = steps + [chair_step]
+    metadata = {
+        "mode": "complex_iterative",
+        "steps": all_steps,
+        "cost": summarize_turn_cost(all_steps),
+    }
     return steps, [], chair_step, metadata
 
 
@@ -984,7 +1120,17 @@ async def run_mode_complex_questioning(
         progress_total=total_steps,
         progress_offset=0,
     )
-    answers = [{"model": a["model"], "response": a["response"], "role": "answer", "prompt_preview": a.get("prompt_preview"), "prompt_full": a.get("prompt_full", user_query), "est_tokens": a.get("est_tokens", max(len(user_query) // 4, 1)), "context_tokens": a.get("context_tokens", context_tokens)} for a in answers]
+    answers = [
+        {
+            **a,
+            "role": "answer",
+            "prompt_preview": a.get("prompt_preview"),
+            "prompt_full": a.get("prompt_full", user_query),
+            "est_tokens": a.get("est_tokens", max(len(user_query) // 4, 1)),
+            "context_tokens": a.get("context_tokens", context_tokens),
+        }
+        for a in answers
+    ]
     if not answers:
         return [], [], {"model": "error", "response": "Complex Questioning failed: no answers."}, {"mode": "complex_questioning"}
 
@@ -999,16 +1145,19 @@ async def run_mode_complex_questioning(
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": question_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        question_step = {
-            "model": ans["model"],
-            "response": resp.get("content", "") if resp else "",
-            "role": "question_self",
-            "prompt_preview": question_prompt[:500],
-            "prompt_full": question_prompt,
-            "est_tokens": max(len(question_prompt) // 4, 1),
-            "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
-            "duration_ms": elapsed_ms,
-        }
+        question_step = apply_usage_fields(
+            {
+                "model": ans["model"],
+                "response": resp.get("content", "") if resp else "",
+                "role": "question_self",
+                "prompt_preview": question_prompt[:500],
+                "prompt_full": question_prompt,
+                "est_tokens": max(len(question_prompt) // 4, 1),
+                "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
+                "duration_ms": elapsed_ms,
+            },
+            resp,
+        )
         questions.append(question_step)
         cursor += 1
         await emit_step_complete(progress_cb, question_step, cursor, total_steps)
@@ -1023,7 +1172,19 @@ async def run_mode_complex_questioning(
     brief_resp = await query_model(chairman_model, [{"role": "user", "content": brief_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     brief_text = brief_resp.get("content", "") if brief_resp else ""
-    brief_step = {"model": chairman_model, "response": brief_text, "role": "brief", "prompt_preview": brief_prompt[:500], "prompt_full": brief_prompt, "est_tokens": max(len(brief_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
+    brief_step = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": brief_text,
+            "role": "brief",
+            "prompt_preview": brief_prompt[:500],
+            "prompt_full": brief_prompt,
+            "est_tokens": max(len(brief_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        brief_resp,
+    )
     cursor += 1
     await emit_step_complete(progress_cb, brief_step, cursor, total_steps)
 
@@ -1035,16 +1196,19 @@ async def run_mode_complex_questioning(
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": muse_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        muse_step = {
-            "model": ans["model"],
-            "response": resp.get("content", "") if resp else "",
-            "role": "muse",
-            "prompt_preview": muse_prompt[:500],
-            "prompt_full": muse_prompt,
-            "est_tokens": max(len(muse_prompt) // 4, 1),
-            "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
-            "duration_ms": elapsed_ms,
-        }
+        muse_step = apply_usage_fields(
+            {
+                "model": ans["model"],
+                "response": resp.get("content", "") if resp else "",
+                "role": "muse",
+                "prompt_preview": muse_prompt[:500],
+                "prompt_full": muse_prompt,
+                "est_tokens": max(len(muse_prompt) // 4, 1),
+                "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
+                "duration_ms": elapsed_ms,
+            },
+            resp,
+        )
         muses.append(muse_step)
         cursor += 1
         await emit_step_complete(progress_cb, muse_step, cursor, total_steps)
@@ -1059,10 +1223,22 @@ async def run_mode_complex_questioning(
     elapsed_ms = int((time.time() - start) * 1000)
     final_text = final_resp.get("content", "") if final_resp else ""
 
-    chair_step = {"model": chairman_model, "response": final_text, "role": "chair_final", "prompt_preview": final_prompt[:500], "prompt_full": final_prompt, "est_tokens": max(len(final_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
+    chair_step = apply_usage_fields(
+        {
+            "model": chairman_model,
+            "response": final_text,
+            "role": "chair_final",
+            "prompt_preview": final_prompt[:500],
+            "prompt_full": final_prompt,
+            "est_tokens": max(len(final_prompt) // 4, 1),
+            "context_tokens": context_map.get("__base__", context_tokens),
+            "duration_ms": elapsed_ms,
+        },
+        final_resp,
+    )
     await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
     steps = answers + questions + [brief_step] + muses + [chair_step]
-    metadata = {"mode": "complex_questioning", "steps": steps}
+    metadata = {"mode": "complex_questioning", "steps": steps, "cost": summarize_turn_cost(steps)}
     return steps, [], chair_step, metadata
 
 

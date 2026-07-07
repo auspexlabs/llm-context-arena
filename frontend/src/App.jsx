@@ -162,11 +162,12 @@ function App() {
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
-              if (event.data?.steps) {
+              if (event.data?.steps || event.data?.cost) {
                 lastMsg.metadata = {
                   ...(lastMsg.metadata || {}),
-                  steps: event.data.steps,
+                  ...(event.data?.steps ? { steps: event.data.steps } : {}),
                   mode: event.data.mode ?? lastMsg.metadata?.mode,
+                  ...(event.data?.cost ? { cost: event.data.cost } : {}),
                 };
               }
               return { ...prev, messages };

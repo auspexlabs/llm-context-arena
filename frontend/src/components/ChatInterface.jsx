@@ -6,6 +6,13 @@ import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
 import { RoundTrack } from './RoundTrack';
+import {
+  formatTokenCount,
+  formatUsd,
+  sessionCostFromMessages,
+  sumStepsCost,
+  turnCostFromMessage,
+} from '../costUtils';
 import './ChatInterface.css';
 import './RoundTrack.css';
 
@@ -748,6 +755,15 @@ export default function ChatInterface({
       ? liveSteps
       : lastAssistantMsg?.metadata?.steps || [];
 
+  const turnCost = isLoading && liveSteps.length
+    ? sumStepsCost(liveSteps)
+    : turnCostFromMessage(lastAssistantMsg);
+  const sessionCost = sessionCostFromMessages(
+    conversation.messages,
+    liveSteps,
+    isLoading
+  );
+
   const indexDelta = indexFreshness;
   const indexIsStale = !!indexDelta?.needs_reindex;
   const indexMissing = indexDelta && indexDelta.has_index === false;
@@ -850,7 +866,23 @@ export default function ChatInterface({
           </div>
         </div>
         <div className="mode-summary-card">
-          <div className="mode-badge large">Mode: {conversation.mode || 'council'}</div>
+          <div className="mode-cost-row">
+            <div className="mode-badge large">Mode: {conversation.mode || 'council'}</div>
+            <div className="cost-tracker" title="OpenRouter usage for this conversation">
+              <span className="cost-tracker-label">Cost</span>
+              <span className="cost-tracker-turn">
+                Turn {formatUsd(turnCost.cost_usd)}
+              </span>
+              <span className="cost-tracker-sep">·</span>
+              <span className="cost-tracker-session">
+                Session {formatUsd(sessionCost.cost_usd)}
+              </span>
+              <span className="cost-tracker-meta">
+                {formatTokenCount(sessionCost.total_tokens)} tok
+                {sessionCost.calls ? ` · ${sessionCost.calls} calls` : ''}
+              </span>
+            </div>
+          </div>
           <div className="mode-summary-text">
             {modeDescriptions[conversation.mode] || 'Multi-step arena orchestration.'}
           </div>
