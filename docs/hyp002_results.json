@@ -1,0 +1,692 @@
+{
+  "golden_repo": "/home/phaze/PycharmProjects/llm-council-rag/tests/fixtures/golden_repo",
+  "arena_repo": "/home/phaze/PycharmProjects/llm-council-rag/backend",
+  "query_count": 18,
+  "probe_count": 6,
+  "k": 10,
+  "colbert_mode": "learned",
+  "variant": "F",
+  "cells": {
+    "regex+mock": {
+      "router": "regex",
+      "reranker": "mock",
+      "variant": "F",
+      "router_accuracy": {
+        "accuracy": 0.3333333333333333,
+        "per_item": {
+          "where is authenticate_user defined": "trace",
+          "where is verify_token defined": "trace",
+          "who calls verify_token": "trace",
+          "trace call chain for authenticate_user": "trace",
+          "UserService login implementation": "semantic",
+          "how does auth_middleware work": "trace",
+          "register_routes handler": "semantic",
+          "queue consumer for background tasks": "semantic",
+          "where is enqueue_task": "trace",
+          "application bootstrap entrypoint": "semantic",
+          "session token issuance": "semantic",
+          "get_user persistence lookup": "semantic",
+          "fetch_user API endpoint": "semantic",
+          "permission check before user fetch": "semantic",
+          "how does login authentication flow work": "trace",
+          "issue_session_token caller": "semantic",
+          "task_queue put handoff": "semantic",
+          "route registration with user service": "semantic"
+        },
+        "confusion": {
+          "symbol_lookup": {
+            "trace": 4,
+            "semantic": 4
+          },
+          "cross_file": {
+            "trace": 1,
+            "semantic": 2
+          },
+          "trace": {
+            "trace": 1
+          },
+          "semantic": {
+            "semantic": 4,
+            "trace": 1
+          },
+          "pattern": {
+            "semantic": 1
+          }
+        }
+      },
+      "golden": {
+        "recall_at_k": 0.8333333333333334,
+        "per_query": {
+          "q01": 1.0,
+          "q02": 1.0,
+          "q03": 1.0,
+          "q04": 1.0,
+          "q05": 1.0,
+          "q06": 1.0,
+          "q07": 1.0,
+          "q08": 1.0,
+          "q09": 1.0,
+          "q10": 1.0,
+          "q11": 0.0,
+          "q12": 1.0,
+          "q13": 1.0,
+          "q14": 0.0,
+          "q15": 1.0,
+          "q16": 1.0,
+          "q17": 0.0,
+          "q18": 1.0
+        },
+        "by_category": {
+          "symbol_lookup": 1.0,
+          "cross_file": 0.6666666666666666,
+          "trace": 1.0,
+          "semantic": 0.8,
+          "pattern": 0.0
+        }
+      },
+      "architectural": {
+        "mean_purity": 0.65,
+        "mean_recall_at_k": 0.5,
+        "per_probe": {
+          "arch01": {
+            "purity": 0.0,
+            "recall_at_k": 0.0
+          },
+          "arch02": {
+            "purity": 0.8,
+            "recall_at_k": 0.0
+          },
+          "arch03": {
+            "purity": 0.8,
+            "recall_at_k": 1.0
+          },
+          "arch04": {
+            "purity": 0.5,
+            "recall_at_k": 1.0
+          },
+          "arch05": {
+            "purity": 0.8,
+            "recall_at_k": 1.0
+          },
+          "arch06": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          }
+        }
+      }
+    },
+    "regex+bge": {
+      "router": "regex",
+      "reranker": "bge",
+      "variant": "F",
+      "router_accuracy": {
+        "accuracy": 0.3333333333333333,
+        "per_item": {
+          "where is authenticate_user defined": "trace",
+          "where is verify_token defined": "trace",
+          "who calls verify_token": "trace",
+          "trace call chain for authenticate_user": "trace",
+          "UserService login implementation": "semantic",
+          "how does auth_middleware work": "trace",
+          "register_routes handler": "semantic",
+          "queue consumer for background tasks": "semantic",
+          "where is enqueue_task": "trace",
+          "application bootstrap entrypoint": "semantic",
+          "session token issuance": "semantic",
+          "get_user persistence lookup": "semantic",
+          "fetch_user API endpoint": "semantic",
+          "permission check before user fetch": "semantic",
+          "how does login authentication flow work": "trace",
+          "issue_session_token caller": "semantic",
+          "task_queue put handoff": "semantic",
+          "route registration with user service": "semantic"
+        },
+        "confusion": {
+          "symbol_lookup": {
+            "trace": 4,
+            "semantic": 4
+          },
+          "cross_file": {
+            "trace": 1,
+            "semantic": 2
+          },
+          "trace": {
+            "trace": 1
+          },
+          "semantic": {
+            "semantic": 4,
+            "trace": 1
+          },
+          "pattern": {
+            "semantic": 1
+          }
+        }
+      },
+      "golden": {
+        "recall_at_k": 0.8333333333333334,
+        "per_query": {
+          "q01": 1.0,
+          "q02": 1.0,
+          "q03": 1.0,
+          "q04": 1.0,
+          "q05": 1.0,
+          "q06": 1.0,
+          "q07": 1.0,
+          "q08": 1.0,
+          "q09": 1.0,
+          "q10": 1.0,
+          "q11": 0.0,
+          "q12": 1.0,
+          "q13": 1.0,
+          "q14": 0.0,
+          "q15": 1.0,
+          "q16": 1.0,
+          "q17": 0.0,
+          "q18": 1.0
+        },
+        "by_category": {
+          "symbol_lookup": 1.0,
+          "cross_file": 0.6666666666666666,
+          "trace": 1.0,
+          "semantic": 0.8,
+          "pattern": 0.0
+        }
+      },
+      "architectural": {
+        "mean_purity": 0.65,
+        "mean_recall_at_k": 0.5,
+        "per_probe": {
+          "arch01": {
+            "purity": 0.0,
+            "recall_at_k": 0.0
+          },
+          "arch02": {
+            "purity": 0.8,
+            "recall_at_k": 0.0
+          },
+          "arch03": {
+            "purity": 0.8,
+            "recall_at_k": 1.0
+          },
+          "arch04": {
+            "purity": 0.5,
+            "recall_at_k": 1.0
+          },
+          "arch05": {
+            "purity": 0.8,
+            "recall_at_k": 1.0
+          },
+          "arch06": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          }
+        }
+      }
+    },
+    "regex+jina": {
+      "router": "regex",
+      "reranker": "jina",
+      "variant": "F",
+      "router_accuracy": {
+        "accuracy": 0.3333333333333333,
+        "per_item": {
+          "where is authenticate_user defined": "trace",
+          "where is verify_token defined": "trace",
+          "who calls verify_token": "trace",
+          "trace call chain for authenticate_user": "trace",
+          "UserService login implementation": "semantic",
+          "how does auth_middleware work": "trace",
+          "register_routes handler": "semantic",
+          "queue consumer for background tasks": "semantic",
+          "where is enqueue_task": "trace",
+          "application bootstrap entrypoint": "semantic",
+          "session token issuance": "semantic",
+          "get_user persistence lookup": "semantic",
+          "fetch_user API endpoint": "semantic",
+          "permission check before user fetch": "semantic",
+          "how does login authentication flow work": "trace",
+          "issue_session_token caller": "semantic",
+          "task_queue put handoff": "semantic",
+          "route registration with user service": "semantic"
+        },
+        "confusion": {
+          "symbol_lookup": {
+            "trace": 4,
+            "semantic": 4
+          },
+          "cross_file": {
+            "trace": 1,
+            "semantic": 2
+          },
+          "trace": {
+            "trace": 1
+          },
+          "semantic": {
+            "semantic": 4,
+            "trace": 1
+          },
+          "pattern": {
+            "semantic": 1
+          }
+        }
+      },
+      "golden": {
+        "recall_at_k": 0.8333333333333334,
+        "per_query": {
+          "q01": 1.0,
+          "q02": 1.0,
+          "q03": 1.0,
+          "q04": 1.0,
+          "q05": 1.0,
+          "q06": 1.0,
+          "q07": 1.0,
+          "q08": 1.0,
+          "q09": 1.0,
+          "q10": 1.0,
+          "q11": 0.0,
+          "q12": 1.0,
+          "q13": 1.0,
+          "q14": 0.0,
+          "q15": 1.0,
+          "q16": 1.0,
+          "q17": 0.0,
+          "q18": 1.0
+        },
+        "by_category": {
+          "symbol_lookup": 1.0,
+          "cross_file": 0.6666666666666666,
+          "trace": 1.0,
+          "semantic": 0.8,
+          "pattern": 0.0
+        }
+      },
+      "architectural": {
+        "mean_purity": 0.65,
+        "mean_recall_at_k": 0.5,
+        "per_probe": {
+          "arch01": {
+            "purity": 0.0,
+            "recall_at_k": 0.0
+          },
+          "arch02": {
+            "purity": 0.8,
+            "recall_at_k": 0.0
+          },
+          "arch03": {
+            "purity": 0.8,
+            "recall_at_k": 1.0
+          },
+          "arch04": {
+            "purity": 0.5,
+            "recall_at_k": 1.0
+          },
+          "arch05": {
+            "purity": 0.8,
+            "recall_at_k": 1.0
+          },
+          "arch06": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          }
+        }
+      }
+    },
+    "embedding+mock": {
+      "router": "embedding",
+      "reranker": "mock",
+      "variant": "F",
+      "router_accuracy": {
+        "accuracy": 0.8333333333333334,
+        "per_item": {
+          "where is authenticate_user defined": "symbol_lookup",
+          "where is verify_token defined": "cross_file",
+          "who calls verify_token": "cross_file",
+          "trace call chain for authenticate_user": "trace",
+          "UserService login implementation": "semantic",
+          "how does auth_middleware work": "symbol_lookup",
+          "register_routes handler": "symbol_lookup",
+          "queue consumer for background tasks": "pattern",
+          "where is enqueue_task": "symbol_lookup",
+          "application bootstrap entrypoint": "semantic",
+          "session token issuance": "semantic",
+          "get_user persistence lookup": "symbol_lookup",
+          "fetch_user API endpoint": "symbol_lookup",
+          "permission check before user fetch": "cross_file",
+          "how does login authentication flow work": "semantic",
+          "issue_session_token caller": "cross_file",
+          "task_queue put handoff": "pattern",
+          "route registration with user service": "semantic"
+        },
+        "confusion": {
+          "symbol_lookup": {
+            "symbol_lookup": 6,
+            "cross_file": 1,
+            "semantic": 1
+          },
+          "cross_file": {
+            "cross_file": 3
+          },
+          "trace": {
+            "trace": 1
+          },
+          "semantic": {
+            "pattern": 1,
+            "semantic": 4
+          },
+          "pattern": {
+            "pattern": 1
+          }
+        }
+      },
+      "golden": {
+        "recall_at_k": 0.8333333333333334,
+        "per_query": {
+          "q01": 1.0,
+          "q02": 1.0,
+          "q03": 1.0,
+          "q04": 1.0,
+          "q05": 1.0,
+          "q06": 1.0,
+          "q07": 1.0,
+          "q08": 1.0,
+          "q09": 1.0,
+          "q10": 1.0,
+          "q11": 0.0,
+          "q12": 1.0,
+          "q13": 1.0,
+          "q14": 0.0,
+          "q15": 1.0,
+          "q16": 1.0,
+          "q17": 0.0,
+          "q18": 1.0
+        },
+        "by_category": {
+          "symbol_lookup": 1.0,
+          "cross_file": 0.6666666666666666,
+          "trace": 1.0,
+          "semantic": 0.8,
+          "pattern": 0.0
+        }
+      },
+      "architectural": {
+        "mean_purity": 0.8333333333333334,
+        "mean_recall_at_k": 0.5,
+        "per_probe": {
+          "arch01": {
+            "purity": 0.0,
+            "recall_at_k": 0.0
+          },
+          "arch02": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          },
+          "arch03": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch04": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch05": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch06": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          }
+        }
+      }
+    },
+    "embedding+bge": {
+      "router": "embedding",
+      "reranker": "bge",
+      "variant": "F",
+      "router_accuracy": {
+        "accuracy": 0.8333333333333334,
+        "per_item": {
+          "where is authenticate_user defined": "symbol_lookup",
+          "where is verify_token defined": "cross_file",
+          "who calls verify_token": "cross_file",
+          "trace call chain for authenticate_user": "trace",
+          "UserService login implementation": "semantic",
+          "how does auth_middleware work": "symbol_lookup",
+          "register_routes handler": "symbol_lookup",
+          "queue consumer for background tasks": "pattern",
+          "where is enqueue_task": "symbol_lookup",
+          "application bootstrap entrypoint": "semantic",
+          "session token issuance": "semantic",
+          "get_user persistence lookup": "symbol_lookup",
+          "fetch_user API endpoint": "symbol_lookup",
+          "permission check before user fetch": "cross_file",
+          "how does login authentication flow work": "semantic",
+          "issue_session_token caller": "cross_file",
+          "task_queue put handoff": "pattern",
+          "route registration with user service": "semantic"
+        },
+        "confusion": {
+          "symbol_lookup": {
+            "symbol_lookup": 6,
+            "cross_file": 1,
+            "semantic": 1
+          },
+          "cross_file": {
+            "cross_file": 3
+          },
+          "trace": {
+            "trace": 1
+          },
+          "semantic": {
+            "pattern": 1,
+            "semantic": 4
+          },
+          "pattern": {
+            "pattern": 1
+          }
+        }
+      },
+      "golden": {
+        "recall_at_k": 0.8333333333333334,
+        "per_query": {
+          "q01": 1.0,
+          "q02": 1.0,
+          "q03": 1.0,
+          "q04": 1.0,
+          "q05": 1.0,
+          "q06": 1.0,
+          "q07": 1.0,
+          "q08": 1.0,
+          "q09": 1.0,
+          "q10": 1.0,
+          "q11": 0.0,
+          "q12": 1.0,
+          "q13": 1.0,
+          "q14": 0.0,
+          "q15": 1.0,
+          "q16": 1.0,
+          "q17": 0.0,
+          "q18": 1.0
+        },
+        "by_category": {
+          "symbol_lookup": 1.0,
+          "cross_file": 0.6666666666666666,
+          "trace": 1.0,
+          "semantic": 0.8,
+          "pattern": 0.0
+        }
+      },
+      "architectural": {
+        "mean_purity": 0.8333333333333334,
+        "mean_recall_at_k": 0.5,
+        "per_probe": {
+          "arch01": {
+            "purity": 0.0,
+            "recall_at_k": 0.0
+          },
+          "arch02": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          },
+          "arch03": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch04": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch05": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch06": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          }
+        }
+      }
+    },
+    "embedding+jina": {
+      "router": "embedding",
+      "reranker": "jina",
+      "variant": "F",
+      "router_accuracy": {
+        "accuracy": 0.8333333333333334,
+        "per_item": {
+          "where is authenticate_user defined": "symbol_lookup",
+          "where is verify_token defined": "cross_file",
+          "who calls verify_token": "cross_file",
+          "trace call chain for authenticate_user": "trace",
+          "UserService login implementation": "semantic",
+          "how does auth_middleware work": "symbol_lookup",
+          "register_routes handler": "symbol_lookup",
+          "queue consumer for background tasks": "pattern",
+          "where is enqueue_task": "symbol_lookup",
+          "application bootstrap entrypoint": "semantic",
+          "session token issuance": "semantic",
+          "get_user persistence lookup": "symbol_lookup",
+          "fetch_user API endpoint": "symbol_lookup",
+          "permission check before user fetch": "cross_file",
+          "how does login authentication flow work": "semantic",
+          "issue_session_token caller": "cross_file",
+          "task_queue put handoff": "pattern",
+          "route registration with user service": "semantic"
+        },
+        "confusion": {
+          "symbol_lookup": {
+            "symbol_lookup": 6,
+            "cross_file": 1,
+            "semantic": 1
+          },
+          "cross_file": {
+            "cross_file": 3
+          },
+          "trace": {
+            "trace": 1
+          },
+          "semantic": {
+            "pattern": 1,
+            "semantic": 4
+          },
+          "pattern": {
+            "pattern": 1
+          }
+        }
+      },
+      "golden": {
+        "recall_at_k": 0.8333333333333334,
+        "per_query": {
+          "q01": 1.0,
+          "q02": 1.0,
+          "q03": 1.0,
+          "q04": 1.0,
+          "q05": 1.0,
+          "q06": 1.0,
+          "q07": 1.0,
+          "q08": 1.0,
+          "q09": 1.0,
+          "q10": 1.0,
+          "q11": 0.0,
+          "q12": 1.0,
+          "q13": 1.0,
+          "q14": 0.0,
+          "q15": 1.0,
+          "q16": 1.0,
+          "q17": 0.0,
+          "q18": 1.0
+        },
+        "by_category": {
+          "symbol_lookup": 1.0,
+          "cross_file": 0.6666666666666666,
+          "trace": 1.0,
+          "semantic": 0.8,
+          "pattern": 0.0
+        }
+      },
+      "architectural": {
+        "mean_purity": 0.8333333333333334,
+        "mean_recall_at_k": 0.5,
+        "per_probe": {
+          "arch01": {
+            "purity": 0.0,
+            "recall_at_k": 0.0
+          },
+          "arch02": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          },
+          "arch03": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch04": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch05": {
+            "purity": 1.0,
+            "recall_at_k": 1.0
+          },
+          "arch06": {
+            "purity": 1.0,
+            "recall_at_k": 0.0
+          }
+        }
+      }
+    }
+  },
+  "summary": {
+    "golden_recall": {
+      "regex+mock": 0.8333333333333334,
+      "regex+bge": 0.8333333333333334,
+      "regex+jina": 0.8333333333333334,
+      "embedding+mock": 0.8333333333333334,
+      "embedding+bge": 0.8333333333333334,
+      "embedding+jina": 0.8333333333333334
+    },
+    "architectural_purity": {
+      "regex+mock": 0.65,
+      "regex+bge": 0.65,
+      "regex+jina": 0.65,
+      "embedding+mock": 0.8333333333333334,
+      "embedding+bge": 0.8333333333333334,
+      "embedding+jina": 0.8333333333333334
+    },
+    "router_accuracy": {
+      "regex+mock": 0.3333333333333333,
+      "regex+bge": 0.3333333333333333,
+      "regex+jina": 0.3333333333333333,
+      "embedding+mock": 0.8333333333333334,
+      "embedding+bge": 0.8333333333333334,
+      "embedding+jina": 0.8333333333333334
+    }
+  },
+  "checkpoints": [
+    "pre_rerank",
+    "post_rerank_pre_graph",
+    "full_pipeline"
+  ],
+  "run_at": "2026-07-06T23:55:55.833708+00:00",
+  "jina_rerun_at": "2026-07-06T23:55:55.833708+00:00"
+}

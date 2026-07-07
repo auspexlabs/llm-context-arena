@@ -12,6 +12,22 @@ logger = logging.getLogger(__name__)
 ScoreFn = Callable[[str, str], float]
 
 
+def create_reranker(
+    model_name: str,
+    *,
+    enabled: bool = True,
+    score_fn: Optional[ScoreFn] = None,
+) -> "CrossEncoderReranker":
+    """Factory: enables trust_remote_code for Jina models."""
+    trust = "jina" in model_name.lower()
+    return CrossEncoderReranker(
+        model_name=model_name,
+        score_fn=score_fn,
+        enabled=enabled,
+        trust_remote_code=trust,
+    )
+
+
 class CrossEncoderReranker:
     """Rerank (query, chunk) pairs with a cross-encoder model."""
 
@@ -20,10 +36,12 @@ class CrossEncoderReranker:
         model_name: str = "BAAI/bge-reranker-base",
         score_fn: Optional[ScoreFn] = None,
         enabled: bool = True,
+        trust_remote_code: bool = False,
     ):
         self.model_name = model_name
         self._score_fn = score_fn
         self.enabled = enabled
+        self.trust_remote_code = trust_remote_code
         self._model = None
 
     def _load_model(self):
@@ -31,7 +49,10 @@ class CrossEncoderReranker:
             return
         try:
             from sentence_transformers import CrossEncoder
-            self._model = CrossEncoder(self.model_name)
+            self._model = CrossEncoder(
+                self.model_name,
+                trust_remote_code=self.trust_remote_code,
+            )
         except Exception:
             logger.exception("Failed to load cross-encoder %s", self.model_name)
             self._model = None
@@ -53,6 +74,8 @@ class CrossEncoderReranker:
         query: str,
         items: Sequence[Tuple[CodeChunk, float]],
         top_k: int,
+        *,
+        blend_prior: bool = True,
     ) -> List[Tuple[CodeChunk, float]]:
         if not items:
             return []
@@ -64,7 +87,7 @@ class CrossEncoderReranker:
         for chunk, prior in items:
             text = chunk.index_text or chunk.content
             score = self.score_pair(query, text)
-            if prior is not None:
+            if blend_prior and prior is not None:
                 score = 0.7 * score + 0.3 * prior
             scored.append((chunk, score))
 

@@ -47,8 +47,11 @@ LMSTUDIO_EMBED_MODEL = os.getenv(
 )
 # Deprecated: rerank runs locally via sentence-transformers (DEC-009), not LM Studio.
 LMSTUDIO_RERANK_MODEL = os.getenv("LMSTUDIO_RERANK_MODEL", "")
-RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base")
+RERANK_MODEL = os.getenv("RERANK_MODEL", "jinaai/jina-reranker-v3")
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() in {"1", "true", "yes"}
+QUERY_ROUTER = os.getenv("QUERY_ROUTER", "embedding").lower()  # embedding | regex
+FUSION_MODE = os.getenv("FUSION_MODE", "rrf").lower()  # rrf | max_score
+GRAPH_MODE = os.getenv("GRAPH_MODE", "append").lower()  # append | resort
 SEMANTIC_BACKEND = os.getenv("SEMANTIC_BACKEND", "colbert").lower()  # colbert | biencoder
 COLBERT_LEARNED = os.getenv("COLBERT_LEARNED", "true").lower() in {"1", "true", "yes"}
 COLBERT_MODEL = os.getenv("COLBERT_MODEL", "colbert-ir/colbertv2.0")

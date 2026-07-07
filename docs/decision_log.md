@@ -175,3 +175,66 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **decision:** **Rerank stage uses `sentence-transformers` BGE** (`BAAI/bge-reranker-base`, configurable). Treat `LMSTUDIO_RERANK_MODEL` as **deprecated/unwired** — remove from docs or map to a future opt-in. Do not run rerank through LM Studio unless a later DEC explicitly adds it.
 - **rationale:** Rerank is query-time batch scoring; local BGE avoids a second LM Studio round-trip and matches DEC-001 intent (“proper cross-encoder”). LM Studio env var was legacy from pre-CodeRAG cosine hack.
 - **impact:** Align `rerank.py` model name with config; README/RAG_LMSTUDIO cleanup task.
+
+### DEC-010: RRF fusion, append-only graph, code rerank; query router gated on HYP-002
+- **date:** 2026-07-06 · **status:** accepted · **triggered_by:** live retrieval probe (graph pollution on broad queries); HYP-001 learned rerank homogenization; user review of modern retrieval plumbing · **docs_updated:** `docs/decision_log.md`, `backend/rag/fusion.py`, `backend/rag/query_router.py`, `backend/rag/retriever.py`, `backend/rag/rerank.py`, `backend/config.py`, `tests/unit/test_fusion.py` · **related:** `DEC-004`, `DEC-009`, `HYP-001`, `HYP-002`, `DEF-003` · **supersedes:** graph re-sort policy in `DEC-004` / `DEC-001` Phase 2 note (“always-on 1-hop” competing for rank slots)
+- **decision:** Adopt a **DEC-010 production topology** (eval variant **F**; `FUSION_MODE=rrf`, `GRAPH_MODE=append` defaults):
+  1. **Separate ranked lists** — ColBERT (or bi-encoder) semantic top-`RETRIEVE_CANDIDATES`; entity seed top-8 (scores used only for list order, not cross-scale merge).
+  2. **RRF fuse** (`reciprocal_rank_fusion`, `k=60`) → candidate pool; replaces max-score union merge.
+  3. **Cross-encoder rerank** on fused pool top-N → **answer slots** (top `RERANK_TOP_K`). When `fusion_mode=rrf`, **do not blend** prior retrieval scores (`blend_prior=False`); CE owns ordering. Default model remains `BAAI/bge-reranker-base` until HYP-002 matrix confirms a code-capable reranker (candidate: `jinaai/jina-reranker-v2-base-multilingual` via `RERANK_MODEL`).
+  4. **README demotion** on answer slots (unchanged).
+  5. **Graph append-only** — expand from top `graph_seed_k` reranked seeds (default 3); neighbors fill up to `graph_append_slots` (default 10) **after** answer slots, deduped, **no re-sort**. Trace queries use multi-hop expansion on append path. **Interim routing** via regex `query_router.route_query()` until HYP-002 promotes embedding router; architectural queries skip graph append.
+  - **HYP-001 legacy:** variant **E** keeps `fusion_mode=max_score`, `graph_mode=resort`, `rerank_blend_prior=True` for apples-to-apples comparison.
+  - **Rejected:** agentic repo exploration as core retrieval path (out of product scope); score-blend across RRF + CE scales; graph neighbors at fixed `0.45` competing in top-K.
+- **rationale:** Live probe showed ColBERT found `arena.py` pre-rerank but BGE + 1-hop re-sort displaced it with `storage.py` neighbors — diverged from original “graph enriches context” intent. RRF is the standard fix for heterogeneous retriever score scales; append-only graph restores enrichment without rank pollution. Code reranker swap deferred to measured HYP-002 matrix, not assumed.
+- **impact:** New `backend/rag/fusion.py`; `RetrievalConfig` flags `fusion_mode`, `graph_mode`, `graph_append_slots`, `use_query_router`, `rerank_blend_prior`; env `FUSION_MODE`, `GRAPH_MODE`; variant F in `RetrievalConfig.for_variant`. Extend `run_hyp001` / eval with variant F + architectural probe queries. Amend `DEC-009` default rerank model only after HYP-002 results.
+
+### DEF-003: Defer chairman-requested trace expansion on follow-up turns
+- **date:** 2026-07-06 · **status:** active · **triggered_by:** user review; `DEC-010` graph policy discussion · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-007`, `DEC-010`
+- **decision:** Do **not** expose `trace_expand` / graph deepening as a chairman tool in the current sprint. First message retrieval uses static pipeline (`ContextEngine` → `CodeRetriever`). Chairman may cite injected context only.
+- **rationale:** Fits arena product shape (one-shot context injection for deliberation, not autonomous repo agent). DEC-010 append-only graph covers most cross-file context on trace queries. Chairman-driven re-retrieval is a second context path with budget/SSE implications.
+- **revisit_when:** (a) HYP-002 shows regex router misses trace/architectural intent on real arena queries, **or** (b) users need multi-turn “dig into call chain X” without re-sending the whole repo — then add an explicit `POST /api/conversations/{id}/expand_trace` tool with line-budget cap and chairman-only invocation.
+
+### HYP-002: Embedding router vs regex for query-conditioned retrieval policy
+- **date:** 2026-07-06 · **status:** promoted to DEC-011 · **triggered_by:** `DEC-010` interim `query_router.route_query()`; golden `category` labels in `hyp001_golden_queries.json` · **docs_updated:** `docs/decision_log.md`, `backend/rag/query_router.py` · **related:** `DEC-010`, `HYP-001`
+- **question:** Does a lightweight **embedding router** (query embedding → softmax over per-class prototypes from golden `category` labels) improve downstream recall@10 and stop graph pollution on architectural queries vs interim regex routing?
+- **observation:** `is_trace_query` regex is too narrow (“council deliberation pipeline” needs `use_graph_append=False` but does not match trace patterns). Golden set already has `symbol_lookup`, `trace`, `cross_file`, `semantic` labels — bootstrap for prototypes without new annotation.
+- **interventions:**
+  - **Router A (baseline):** `route_query()` regex (shipped as interim in `query_router.py`).
+  - **Router B:** embed query with `all-MiniLM-L6-v2` (or shared embedder); cosine to class centroids built from golden queries per `category` + augmented paraphrases; `argmax` → `QueryRoute` flags (`use_graph_append`, `graph_trace`, `graph_seed_k`).
+  - **Router C (optional):** fine-tuned DistilBERT 5-class classifier if B plateaus.
+- **test matrix:** Run variants **F** (DEC-010 stack) under Router A vs B on:
+  - HYP-001 golden 18 queries (recall@10 by category + router classification accuracy vs golden `category`).
+  - **Architectural probe set** (≥5 queries: e.g. “council deliberation pipeline”, “SSE streaming progress”, “context budgeting flow”) — metric: **answer-slot purity** (fraction of top-10 that are non-neighbor semantic hits, not graph-appended chunks).
+  - **Reranker sub-matrix** on best router: `BAAI/bge-reranker-base` vs `jinaai/jina-reranker-v2-base-multilingual` (local `sentence-transformers`).
+- **results:** *(2026-07-06, learned ColBERT + variant F; `docs/hyp002_results.json`; `python -m backend.run_hyp002 --reuse-colbert`)*
+  | Cell | golden recall@10 | arch purity | router accuracy |
+  |------|------------------|-------------|-----------------|
+  | regex+mock/bge/jina | 0.833 | 0.650 | 0.333 |
+  | embedding+mock/bge/jina | 0.833 | **0.833** | **0.833** |
+  - **Router:** Embedding beats regex on arch purity (0.65→0.83) and classification (0.33→0.83) with no golden regression. Regex over-fires `trace` on symbol queries (`where is X defined`).
+  - **Reranker:** BGE and **Jina v3** (`jinaai/jina-reranker-v3`) tie on all metrics; Jina v2 incompatible with current `transformers` (missing `create_position_ids_from_input_ids`). Added `einops` dep; v3 requires `trust_remote_code=True`.
+  - **Architectural probes:** `arch01` (`council deliberation pipeline`) still 0% recall under embedding router — ColBERT finds wrong chunks; purity metric conflated with graph-off (0.0 purity = graph polluted top-10 before fix, or rerank miss).
+  - **Conclusion:** Promote **embedding router** + variant **F** defaults. Jina v3 no gain on this set but adopted as default reranker per user preference (small eval set). Follow-up: fix `arch01` retrieval target.
+- **status:** promoted to DEC-011
+
+### DEC-011: Default embedding query router + Jina v3 reranker (variant F production)
+- **date:** 2026-07-06 · **status:** accepted · **triggered_by:** HYP-002 results (`docs/hyp002_results.json`); user approval · **docs_updated:** `docs/decision_log.md`, `backend/rag/query_router.py`, `backend/rag/router_training.json`, `backend/config.py`, `backend/rag/rerank.py`, `backend/rag_lmstudio_provider.py` · **related:** `DEC-010`, `HYP-002`, `DEC-009` · **promotes:** `HYP-002`
+- **decision:** Wire **production defaults** for DEC-010 variant F:
+  - **Query router:** `QUERY_ROUTER=embedding` (default). `route_query()` lazy-loads `EmbeddingQueryRouter` from `backend/rag/router_training.json` (24 labeled queries). Fallback to `route_query_regex` on init failure or `QUERY_ROUTER=regex`.
+  - **Reranker:** `RERANK_MODEL=jinaai/jina-reranker-v3` (default). `create_reranker()` sets `trust_remote_code=True` for Jina models. BGE remains available via env override.
+  - Existing env toggles unchanged: `FUSION_MODE=rrf`, `GRAPH_MODE=append`.
+- **rationale:** HYP-002 showed embedding router fixes regex trace over-match and architectural graph pollution without golden recall regression. Jina v3 tied BGE on golden/arch probes but user prefers Jina for likely out-of-sample code-rerank strength; eval set too small to differentiate.
+- **impact:** `LMStudioRAGProvider` uses `create_reranker()`; `backend/run_hyp002.py` eval harness; `reset_routers()` for test isolation. **Supersedes** `DEC-009` default rerank model (BGE → Jina v3); BGE still via `RERANK_MODEL` env.
+- **supersedes:** `DEC-009` default `RERANK_MODEL` choice (policy unchanged: local `sentence-transformers` cross-encoder)
+
+### DIS-001: Local smoke test — ColBERT strong pre-rerank; Jina promotes docs/eval JSON
+- **date:** 2026-07-07 · **status:** observed · **triggered_by:** post-DEC-011 smoke on `backend/` + `frontend/src/` + `docs/` (396 chunks) · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-010`, `DEC-011`, `DEF-004`
+- **finding:** Production variant F behaves as designed: embedding router sets `architectural` → `graph_append=False`; ColBERT+RRF finds correct code pre-rerank (`arena.py:run_full_arena`, `context_engine.py`, `main.py:send_message_stream`). **Jina v3 rerank** then promotes `docs/hyp002_results.json`, `docs/decision_log.md`, and `eval_*.py` above source files on broad queries — reranker trained on prose, not code AST chunks.
+- **implication:** Graph pollution fixed; **rerank + index composition** are the remaining precision risks. Not a router regression.
+
+### DEF-004: Defer conditional rerank and index hygiene for eval/doc artifacts
+- **date:** 2026-07-07 · **status:** active · **triggered_by:** `DIS-001` · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-011`, `DEC-008`
+- **decision:** Defer implementation. Interim guidance: exclude `docs/*_results*.json` from user indexes where possible; consider `RERANK_ENABLED=false` or BGE override if latency/precision hurt.
+- **revisit_when:** (a) user indexes repos with large `docs/` or generated JSON, **or** (b) query-time Jina latency on CPU exceeds interactive budget (~30s/query observed at 396 chunks).
+- **candidate fixes:** conditional rerank (skip CE when ColBERT margin high); demote `docs/` + `*.json` chunk types; per-file ColBERT upsert (DEC-008 follow-up) to avoid full re-encode on delta.

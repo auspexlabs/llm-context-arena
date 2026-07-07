@@ -1,0 +1,38 @@
+[
+  {
+    "id": "arch01",
+    "query": "council deliberation pipeline",
+    "relevant": [{"source": "arena.py", "symbol": "run_full_arena"}],
+    "category": "architectural"
+  },
+  {
+    "id": "arch02",
+    "query": "SSE streaming progress for arena messages",
+    "relevant": [{"source": "main.py", "symbol": "send_message_stream"}],
+    "category": "architectural"
+  },
+  {
+    "id": "arch03",
+    "query": "context budgeting and token limits",
+    "relevant": [{"source": "context_engine.py", "symbol": null}],
+    "category": "architectural"
+  },
+  {
+    "id": "arch04",
+    "query": "cross-encoder rerank for code chunks",
+    "relevant": [{"source": "rag/rerank.py", "symbol": "CrossEncoderReranker"}],
+    "category": "architectural"
+  },
+  {
+    "id": "arch05",
+    "query": "ColBERT late interaction semantic index",
+    "relevant": [{"source": "rag/colbert.py", "symbol": null}],
+    "category": "architectural"
+  },
+  {
+    "id": "arch06",
+    "query": "retrieval config and graph append policy",
+    "relevant": [{"source": "rag/retriever.py", "symbol": "RetrievalConfig"}],
+    "category": "architectural"
+  }
+]

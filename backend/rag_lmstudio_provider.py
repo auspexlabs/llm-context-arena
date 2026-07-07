@@ -32,7 +32,7 @@ from .rag.chunker import SKIP_DIR_NAMES, iter_source_files
 from .rag.manifest import diff_manifest, scan_repo_files
 from .rag.format import build_manual_context, estimate_tokens
 from .rag.indexer import index_directory
-from .rag.rerank import CrossEncoderReranker
+from .rag.rerank import create_reranker
 from .rag.retriever import CodeRetriever, RetrievalConfig
 from .rag.store import ConversationStore, clear_store_cache, get_or_load_store, register_store
 from .rag_provider import IndexResult, RAGProvider, RetrievalResult, RetrievedChunk
@@ -107,7 +107,7 @@ class LMStudioRAGProvider(RAGProvider):
     def __init__(
         self,
         embedder: Optional[Any] = None,
-        reranker: Optional[CrossEncoderReranker] = None,
+        reranker: Optional[Any] = None,
     ):
         self.embeddings = embedder or OpenAIEmbeddings(
             base_url=LMSTUDIO_BASE_URL,
@@ -115,10 +115,7 @@ class LMStudioRAGProvider(RAGProvider):
             model=LMSTUDIO_EMBED_MODEL,
             check_embedding_ctx_length=False,
         )
-        self.reranker = reranker or CrossEncoderReranker(
-            model_name=RERANK_MODEL,
-            enabled=RERANK_ENABLED,
-        )
+        self.reranker = reranker or create_reranker(RERANK_MODEL, enabled=RERANK_ENABLED)
         self.manifest_path = Path(INDEX_MANIFEST_PATH)
 
     def _store(self, conversation_id: str) -> ConversationStore:

@@ -15,7 +15,7 @@ from .chunker import chunk_repository
 from .colbert import LateInteractionIndex
 from .entity_index import EntityIndex
 from .graph import CodeGraph
-from .rerank import CrossEncoderReranker
+from .rerank import CrossEncoderReranker, create_reranker
 from .retriever import CodeRetriever, RetrievalConfig
 from .store import ConversationStore
 from .types import CodeChunk
@@ -159,6 +159,7 @@ def build_eval_store(
     *,
     colbert_mode: str = "hash",
     colbert_index_dir: Optional[Path] = None,
+    rebuild_colbert: bool = True,
 ) -> ConversationStore:
     """Index golden repo with weak bi-encoder + full graph sidecars.
 
@@ -178,7 +179,7 @@ def build_eval_store(
         from .colbert import build_semantic_index
 
         idx_dir = colbert_index_dir or Path("data/conversations") / f"{conversation_id}_colbert"
-        store.colbert_index = build_semantic_index(chunks, idx_dir, rebuild=True)
+        store.colbert_index = build_semantic_index(chunks, idx_dir, rebuild=rebuild_colbert)
     else:
         store.colbert_index = LateInteractionIndex.from_chunks(chunks)
 
@@ -191,12 +192,20 @@ def build_eval_store(
     return store
 
 
-def make_eval_reranker(mode: str = "mock") -> CrossEncoderReranker:
-    """mock = flat 0.5 scores (ablation parity); bge = local sentence-transformers."""
+def make_eval_reranker(mode: str = "mock", *, model_name: Optional[str] = None) -> CrossEncoderReranker:
+    """mock = flat 0.5; bge/jina = local sentence-transformers cross-encoders."""
+    if mode == "mock":
+        return CrossEncoderReranker(score_fn=lambda _q, _d: 0.5, enabled=True)
     if mode == "bge":
+        from ..config import RERANK_ENABLED
+
+        return create_reranker(model_name or "BAAI/bge-reranker-base", enabled=RERANK_ENABLED)
+    if mode == "jina":
         from ..config import RERANK_ENABLED, RERANK_MODEL
 
-        return CrossEncoderReranker(model_name=RERANK_MODEL, enabled=RERANK_ENABLED)
+        return create_reranker(model_name or RERANK_MODEL, enabled=RERANK_ENABLED)
+    if model_name:
+        return create_reranker(model_name, enabled=True)
     return CrossEncoderReranker(score_fn=lambda _q, _d: 0.5, enabled=True)
 
 
