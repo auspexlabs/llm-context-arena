@@ -29,9 +29,11 @@ from .dependencies import (
     get_settings,
     get_storage_service,
     get_rag_provider_dep,
+    apply_squad_preset,
     load_runtime_settings,
     save_runtime_settings,
 )
+from .squad_presets import list_squad_summaries
 from .storage import reset_conversation
 from .storage_service import StorageService
 from .rag_lmstudio import (
@@ -776,6 +778,21 @@ async def update_settings(payload: UpdateSettingsRequest):
     data = payload.dict(exclude_none=True)
     saved = save_runtime_settings(data)
     return saved
+
+
+@app.get("/api/settings/squads")
+async def list_settings_squads():
+    """List arena squad presets (JSON files under backend/squads/)."""
+    return {"squads": list_squad_summaries()}
+
+
+@app.post("/api/settings/squad/{squad_name}")
+async def apply_settings_squad(squad_name: str):
+    """Apply a squad preset to runtime settings (arena_models + chairman)."""
+    try:
+        return apply_squad_preset(squad_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":

@@ -41,6 +41,21 @@ export default function Sidebar({
     onNewConversation(mode);
   };
 
+  const handleSquadChange = async (squadName) => {
+    if (!squadName) return;
+    try {
+      setSettingsStatus('Applying squad...');
+      const saved = await api.applySquad(squadName);
+      setSettings(saved);
+      if (saved?.repo_root) {
+        onRepoRootChange && onRepoRootChange(saved.repo_root);
+      }
+      setSettingsStatus(`Squad: ${saved.arena_squad || squadName}`);
+    } catch (err) {
+      setSettingsStatus('Squad apply failed');
+    }
+  };
+
   const handleSettingsSave = async () => {
     try {
       setSettingsStatus('Saving...');
@@ -95,6 +110,22 @@ export default function Sidebar({
 
       {showSettings && (
         <div className="settings-panel">
+          <div className="settings-field">
+            <label>Arena squad</label>
+            <select
+              value={settings.arena_squad || 'normal'}
+              onChange={(e) => handleSquadChange(e.target.value)}
+            >
+              {(settings.available_squads || []).map((squad) => (
+                <option key={squad.name} value={squad.name}>
+                  {squad.label} ({squad.arena_count} models)
+                </option>
+              ))}
+            </select>
+            <small className="settings-hint">
+              Presets from backend/squads/ — updates arena + chairman immediately.
+            </small>
+          </div>
           <div className="settings-field">
             <label>Arena models (one per line)</label>
             <textarea

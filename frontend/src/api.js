@@ -259,4 +259,14 @@ export const api = {
     }
     return response.json();
   },
+
+  async applySquad(squadName) {
+    const response = await fetch(`${API_BASE}/api/settings/squad/${encodeURIComponent(squadName)}`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error('Failed to apply squad preset');
+    }
+    return response.json();
+  },
 };

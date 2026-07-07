@@ -210,19 +210,21 @@ Control behavior inline with your query:
 
 ### Arena Models
 
-Edit `backend/config.py` or use the settings panel:
+Squad presets live in `backend/squads/`:
 
-```python
-# Free/cheap arena members; chairman is a single paid synthesis call
-ARENA_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen3-coder:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    # ... see backend/config.py for full default list
-]
+| Squad | File | Arena size |
+|-------|------|------------|
+| **normal** (default) | `normal.json` | 5 free models |
+| **freebee9** | `freebee9.json` | 9 free models |
 
-CHAIRMAN_MODEL = "google/gemini-2.5-pro"
+Swap without editing code:
+
+```bash
+# .env — startup default (before data/config.json overrides)
+ARENA_SQUAD=normal    # or freebee9
 ```
+
+Or use **Settings → Arena squad** in the UI (persists to `data/config.json`). Chairman stays `google/gemini-2.5-pro` in both presets; edit the JSON files to change it.
 
 ### Environment
 

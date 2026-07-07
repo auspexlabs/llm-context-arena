@@ -10,24 +10,16 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+from .squad_presets import resolve_startup_squad
+
 # OpenRouter API key
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Arena models — OpenRouter identifiers (default: free tier for cost-efficient councils)
-ARENA_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen3-coder:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "openai/gpt-oss-120b:free",
-    "cohere/north-mini-code:free",
-    "tencent/hy3:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
-    "qwen/qwen3-next-80b-a3b-instruct:free",
-    "poolside/laguna-xs-2.1:free",
-]
-
-# Chairman — one synthesis call per run; use a larger paid model
-CHAIRMAN_MODEL = "google/gemini-2.5-pro"
+# Arena squad preset — swap via ARENA_SQUAD=normal|freebee9 or settings panel
+_startup_squad = resolve_startup_squad(os.getenv("ARENA_SQUAD"))
+ARENA_SQUAD = _startup_squad["name"]
+ARENA_MODELS = _startup_squad["arena_models"]
+CHAIRMAN_MODEL = _startup_squad["chairman_model"]
 
 # Backwards compatibility alias
 COUNCIL_MODELS = ARENA_MODELS  # Deprecated: use ARENA_MODELS
