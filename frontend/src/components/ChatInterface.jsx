@@ -737,6 +737,17 @@ export default function ChatInterface({
     );
   }
 
+  const isCouncilMode = ['council', 'baseline'].includes(
+    (conversation.mode || 'council').toLowerCase()
+  );
+  const lastAssistantMsg = [...(conversation.messages || [])]
+    .reverse()
+    .find((m) => m.role === 'assistant');
+  const executionSteps =
+    isLoading && liveSteps.length
+      ? liveSteps
+      : lastAssistantMsg?.metadata?.steps || [];
+
   const indexDelta = indexFreshness;
   const indexIsStale = !!indexDelta?.needs_reindex;
   const indexMissing = indexDelta && indexDelta.has_index === false;
@@ -932,14 +943,20 @@ export default function ChatInterface({
                 <div className="assistant-message">
                   <div className="message-label">LLM Context Arena</div>
 
-                  {/* Stage 1 */}
-                  {msg.loading?.stage1 && (
+                  {/* Council: Stage 1 answers */}
+                  {isCouncilMode && msg.loading?.stage1 && isLoading && index === conversation.messages.length - 1 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
                       <span>{stage1LoadingText()}</span>
                     </div>
                   )}
-                  {msg.stage1 && (
+                  {!isCouncilMode && msg.loading?.stage1 && isLoading && index === conversation.messages.length - 1 && (
+                    <div className="stage-loading">
+                      <div className="spinner"></div>
+                      <span>{formatProgressLabel(currentModeProgress) || `Running ${conversation.mode}…`}</span>
+                    </div>
+                  )}
+                  {isCouncilMode && msg.stage1?.length > 0 && (
                     <Stage1
                       ref={stage1Ref}
                       responses={msg.stage1}
@@ -954,21 +971,15 @@ export default function ChatInterface({
                       }
                     />
                   )}
-                  {msg.loading?.stage1 && msg.stage1 && !isLoading && (
-                    <div className="stage-loading done">
-                      <div className="spinner" style={{ visibility: 'hidden' }}></div>
-                      <span>Stage 1 complete</span>
-                    </div>
-                  )}
 
-                  {/* Stage 2 */}
-                  {msg.loading?.stage2 && (
+                  {/* Council: Stage 2 rankings */}
+                  {isCouncilMode && msg.loading?.stage2 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
                       <span>Running Stage 2: Peer rankings...</span>
                     </div>
                   )}
-                  {msg.stage2 && (
+                  {isCouncilMode && msg.stage2?.length > 0 && (
                     <Stage2
                       rankings={msg.stage2}
                       labelToModel={msg.metadata?.label_to_model || msg.metadata?.labelToModel}
@@ -978,39 +989,6 @@ export default function ChatInterface({
                         stage1Ref.current?.scrollIntoView({ behavior: 'smooth' });
                       }}
                     />
-                  )}
-
-                  {conversation.mode === 'fight' && msg.metadata?.steps && (
-                    <div className="fight-transcript">
-                      <h4>Fight Transcript</h4>
-                      <div className="fight-block">
-                        <strong>Answers</strong>
-                        {msg.metadata.steps.filter((s) => s.role === 'answer').map((s, idx) => (
-                          <div key={`ans-${idx}`} className="fight-line">
-                            <span className="fight-model">{shortModelName(s.model)}</span>
-                            <span className="fight-text">{(s.response || '').slice(0, 160)}{(s.response || '').length > 160 ? '…' : ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="fight-block">
-                        <strong>Critiques</strong>
-                        {msg.metadata.steps.filter((s) => s.role === 'critique').map((s, idx) => (
-                          <div key={`crit-${idx}`} className="fight-line">
-                            <span className="fight-model">{shortModelName(s.model)}</span>
-                            <span className="fight-text">{(s.response || '').slice(0, 160)}{(s.response || '').length > 160 ? '…' : ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="fight-block">
-                        <strong>Defenses</strong>
-                        {msg.metadata.steps.filter((s) => s.role === 'defense').map((s, idx) => (
-                          <div key={`def-${idx}`} className="fight-line">
-                            <span className="fight-model">{shortModelName(s.model)}</span>
-                            <span className="fight-text">{(s.response || '').slice(0, 160)}{(s.response || '').length > 160 ? '…' : ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   )}
 
                   {/* Stage 3 */}
@@ -1044,46 +1022,38 @@ export default function ChatInterface({
           </div>
         )}
 
-        {!isLoading &&
-          conversation.messages
-            .filter((msg) => msg.role === 'assistant')
-            .slice(-1)
-            .map((msg, idx) => {
-              const steps = (msg.metadata?.steps && msg.metadata.steps.length) ? msg.metadata.steps : liveSteps;
-              const hasSteps = steps && steps.length > 0;
+        {executionSteps.length > 0 && (
+          <div className="execution-timeline-panel">
+            {(() => {
+              const stepsWithIndex = executionSteps.map((s, i) => ({
+                ...s,
+                __idx: s.__idx ?? i,
+              }));
+              const activeMode = lastAssistantMsg?.metadata?.mode || conversation.mode;
               return (
-                <div key={idx}>
-                  {hasSteps ? (() => {
-                    const stepsWithIndex = (steps || []).map((s, i) => ({ ...s, __idx: i }));
-                    return (
-                      <>
-                        <div className="timeline-detail-pane full">
-                          {renderTimeline(stepsWithIndex, computeActiveIndex(stepsWithIndex))}
-                        </div>
-                        <div className="timeline-roundtrack full">
-                          <RoundTrack
-                            mode={msg.metadata?.mode || conversation.mode}
-                            steps={stepsWithIndex}
-                            onSelectStep={(idx) => {
-                              if (idx === null || idx === undefined) return;
-                              // Scroll to chat content (Stage sections)
-                              setFocusedTarget({ index: idx, role: stepsWithIndex[idx]?.role, model: stepsWithIndex[idx]?.model });
-                              setPendingScrollIndex(idx);
-                              // ensure prompts expanded for that step if present
-                              setExpandedPrompts((prev) => ({ ...prev, [idx]: true }));
-                            }}
-                          />
-                        </div>
-                      </>
-                    );
-                  })() : null}
-                </div>
+                <>
+                  <div className="timeline-detail-pane full">
+                    {renderTimeline(stepsWithIndex, computeActiveIndex(stepsWithIndex))}
+                  </div>
+                  <div className="timeline-roundtrack full">
+                    <RoundTrack
+                      mode={activeMode}
+                      steps={stepsWithIndex}
+                      onSelectStep={(idx) => {
+                        if (idx === null || idx === undefined) return;
+                        const step = stepsWithIndex[idx];
+                        setFocusedTarget({ index: idx, role: step?.role, model: step?.model });
+                        setPendingScrollIndex(idx);
+                        setExpandedPrompts((prev) => ({ ...prev, [idx]: true }));
+                        if (isCouncilMode && step?.role === 'answer') {
+                          stage1Ref.current?.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
+                    />
+                  </div>
+                </>
               );
-            })}
-
-        {isLoading && liveSteps.length > 0 && (
-          <div>
-            {renderTimeline(liveSteps, computeActiveIndex(liveSteps))}
+            })()}
           </div>
         )}
 

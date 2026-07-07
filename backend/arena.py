@@ -6,6 +6,79 @@ from typing import List, Dict, Any, Tuple, Optional, Callable
 from .openrouter import query_models_parallel, query_model
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
 
+COUNCIL_MODES = frozenset({"council", "baseline"})
+
+
+def is_council_mode(mode: Optional[str]) -> bool:
+    return (mode or "council").lower() in COUNCIL_MODES
+
+
+def normalize_arena_results(
+    mode: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    stage3_result: Dict[str, Any],
+    metadata: Dict[str, Any],
+) -> Tuple[List, List, Dict, Dict]:
+    """Council keeps stage1/2/3 split; advanced modes expose steps only via metadata."""
+    mode_key = (mode or "council").lower()
+    meta = dict(metadata or {})
+    meta["mode"] = meta.get("mode") or mode_key
+    if is_council_mode(mode_key):
+        return stage1_results, stage2_results, stage3_result, meta
+    steps = meta.get("steps")
+    if not steps and stage1_results:
+        steps = list(stage1_results)
+        meta["steps"] = steps
+    return [], stage2_results, stage3_result, meta
+
+
+async def emit_execution_start(
+    progress_cb: Optional[Callable[[Dict[str, Any]], Any]],
+    mode: str,
+    step_total: int,
+    labels: Optional[List[str]] = None,
+) -> None:
+    if not progress_cb:
+        return
+    await progress_cb(
+        {
+            "type": "execution_start",
+            "data": {
+                "mode": mode,
+                "step_total": step_total,
+                "labels": labels or [],
+            },
+        }
+    )
+    await progress_cb({"type": "mode_steps", "data": {"total": step_total, "labels": labels or []}})
+
+
+async def emit_step_complete(
+    progress_cb: Optional[Callable[[Dict[str, Any]], Any]],
+    step: Dict[str, Any],
+    step_index: int,
+    step_total: int,
+    *,
+    state: str = "finish",
+) -> None:
+    if not progress_cb:
+        return
+    payload = {
+        "step_index": step_index,
+        "step_total": step_total,
+        "step": step,
+        "role": step.get("role"),
+        "label": step.get("role"),
+        "model": step.get("model"),
+        "active_model": step.get("model"),
+        "state": state,
+        "completed": step_index,
+        "current": step_index,
+    }
+    await progress_cb({"type": "step_complete", "data": payload})
+    await progress_cb({"type": "mode_progress", "data": payload})
+
 
 async def stage1_collect_responses(
     user_query: str,
@@ -29,20 +102,27 @@ async def stage1_collect_responses(
     models = arena_models or ARENA_MODELS
     context_map = context_tokens_map or {}
     total_steps = progress_total if progress_total is not None else len(models)
-    completed = progress_offset
+    step_counter = [progress_offset]
+    counter_lock = asyncio.Lock()
 
     async def _run_model(idx: int, model: str) -> Optional[Dict[str, Any]]:
         prompt = per_model_prompts.get(model, user_query) if per_model_prompts else user_query
         context_tokens = context_map.get(model, context_map.get("__base__", 0))
+        async with counter_lock:
+            start_idx = step_counter[0]
         if progress_cb:
             await progress_cb(
                 {
                     "type": "mode_progress",
                     "data": {
-                        "completed": completed,
+                        "step_index": start_idx,
+                        "step_total": total_steps,
+                        "completed": start_idx,
+                        "current": start_idx,
                         "total": total_steps,
                         "label": "answer",
                         "active_model": model,
+                        "model": model,
                         "state": "start",
                     },
                 }
@@ -55,32 +135,9 @@ async def stage1_collect_responses(
             model,
             [{"role": "user", "content": individual_prompt}],
         )
-        if progress_cb:
-            await progress_cb(
-                {
-                    "type": "mode_progress",
-                    "data": {
-                        "completed": min(completed + 1, total_steps),
-                        "total": total_steps,
-                        "label": "answer",
-                        "active_model": model,
-                        "state": "finish",
-                        "context_tokens": context_tokens,
-                        "est_tokens": max(len(individual_prompt) // 4, 1),
-                        "step": {
-                            "model": model,
-                            "response": resp.get("content", ""),
-                            "role": "answer",
-                            "prompt_preview": individual_prompt[:200],
-                            "est_tokens": max(len(individual_prompt) // 4, 1),
-                            "context_tokens": context_tokens,
-                        },
-                    },
-                }
-            )
         if resp is None:
             return None
-        return {
+        result = {
             "model": model,
             "response": resp.get("content", ""),
             "role": "answer",
@@ -89,6 +146,11 @@ async def stage1_collect_responses(
             "est_tokens": max(len(individual_prompt) // 4, 1),
             "context_tokens": context_tokens,
         }
+        async with counter_lock:
+            step_counter[0] += 1
+            finish_idx = step_counter[0]
+        await emit_step_complete(progress_cb, result, finish_idx, total_steps)
+        return result
 
     tasks = [asyncio.create_task(_run_model(idx, model)) for idx, model in enumerate(models)]
     responses_list = await asyncio.gather(*tasks)
@@ -401,19 +463,23 @@ async def run_full_arena(
         progress_cb=progress_cb,
     )
     stage1_results, stage2_results, stage3_result, metadata = results
-    if progress_cb and metadata.get("steps"):
+    normalized = normalize_arena_results(
+        mode, stage1_results, stage2_results, stage3_result, metadata
+    )
+    if progress_cb:
+        steps = normalized[3].get("steps") or []
         await progress_cb(
             {
-                "type": "mode_progress",
+                "type": "execution_complete",
                 "data": {
-                    "current": len(metadata.get("steps", [])),
-                    "total": len(metadata.get("steps", [])),
-                    "label": "Complete",
-                    "state": "finish",
+                    "mode": mode,
+                    "step_total": len(steps),
+                    "steps": steps,
+                    "council_mode": is_council_mode(mode),
                 },
             }
         )
-    return results
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -434,8 +500,12 @@ async def run_mode_council(
     """Council mode: All models answer, peer review, chairman synthesizes."""
     models = arena_models or ARENA_MODELS
     total_steps = len(models) + 2  # stage1 per model + rankings + chair
-    if progress_cb:
-        await progress_cb({"type": "mode_steps", "data": {"total": total_steps, "labels": ["answer"] * len(models) + ["rankings", "chair_final"]}})
+    await emit_execution_start(
+        progress_cb,
+        "council",
+        total_steps,
+        ["answer"] * len(models) + ["rankings", "chair_final"],
+    )
 
     stage1_results = await stage1_collect_responses(
         user_query,
@@ -451,23 +521,32 @@ async def run_mode_council(
             "response": "All models failed to respond. Please try again."
         }, {"mode": "council"}
 
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": len(stage1_results), "total": total_steps, "label": "rankings", "active_model": "arena", "state": "start"}})
     stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results, models)
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": len(stage1_results) + 1, "total": total_steps, "label": "rankings", "active_model": "arena", "state": "finish"}})
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": len(stage1_results) + 1, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "start"}})
+    rankings_step = {
+        "model": "arena",
+        "response": "\n\n".join(
+            f"{r['model']}:\n{(r.get('ranking') or '')[:1200]}"
+            for r in stage2_results
+        ),
+        "role": "rankings",
+        "prompt_preview": "Peer rankings aggregation",
+        "context_tokens": 0,
+        "est_tokens": 0,
+    }
+    await emit_step_complete(
+        progress_cb, rankings_step, len(stage1_results) + 1, total_steps
+    )
+
     stage3_result = await stage3_synthesize_final(
         user_query,
         stage1_results,
         stage2_results,
         chairman_model=chairman_model,
     )
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": total_steps, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "finish"}})
+    chair_step = dict(stage3_result, role="chair_final")
+    await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
 
     metadata = {
         "label_to_model": label_to_model,
@@ -477,17 +556,7 @@ async def run_mode_council(
             dict(s, context_tokens=s.get("context_tokens", context_tokens))
             for s in stage1_results
         ]
-        + [
-            {
-                "model": "arena",
-                "response": "",
-                "role": "rankings",
-                "prompt_preview": "Peer rankings aggregation",
-                "context_tokens": 0,
-                "est_tokens": 0,
-            },
-            dict(stage3_result, role="chair_final"),
-        ],
+        + [rankings_step, chair_step],
     }
     return stage1_results, stage2_results, stage3_result, metadata
 
@@ -509,16 +578,13 @@ async def run_mode_round_robin(
     prior_text = ""
     passes = iterations or 1
     total_steps = passes * len(models) + 1
-    if progress_cb:
-        await progress_cb(
-            {
-                "type": "mode_steps",
-                "data": {
-                    "total": total_steps,
-                    "labels": [f"draft_p{p}_t{t}" for p in range(1, passes + 1) for t in range(1, len(models) + 1)] + ["chair_final"],
-                },
-            }
-        )
+    await emit_execution_start(
+        progress_cb,
+        "round_robin",
+        total_steps,
+        [f"draft_p{p}_t{t}" for p in range(1, passes + 1) for t in range(1, len(models) + 1)]
+        + ["chair_final"],
+    )
     step_idx = 0
     for iteration in range(1, passes + 1):
         for turn, model in enumerate(models, start=1):
@@ -530,24 +596,11 @@ async def run_mode_round_robin(
             )
             full_prompt = f"{base_prompt}\n\n{turn_prompt}"
             start = time.time()
-            if progress_cb:
-                await progress_cb(
-                    {
-                        "type": "mode_progress",
-                        "data": {
-                            "current": step_idx,
-                            "total": total_steps,
-                            "label": f"draft_{iteration}/{passes}",
-                            "model": model,
-                            "state": "start",
-                        },
-                    }
-                )
             resp = await query_model(model, [{"role": "user", "content": full_prompt}])
             elapsed_ms = int((time.time() - start) * 1000)
             text = resp.get("content", "") if resp else ""
             ctx_tokens = context_map.get(model, context_map.get("__base__", context_tokens))
-            drafts.append({
+            draft_step = {
                 "model": model,
                 "response": text,
                 "role": f"draft_p{iteration}_t{turn}",
@@ -556,22 +609,11 @@ async def run_mode_round_robin(
                 "est_tokens": max(len(full_prompt) // 4, 1),
                 "context_tokens": ctx_tokens,
                 "duration_ms": elapsed_ms,
-            })
+            }
+            drafts.append(draft_step)
             prior_text = text or prior_text
             step_idx += 1
-            if progress_cb:
-                await progress_cb(
-                    {
-                        "type": "mode_progress",
-                        "data": {
-                            "current": step_idx,
-                            "total": total_steps,
-                            "label": f"draft_{iteration}/{passes}",
-                            "model": model,
-                            "state": "finish",
-                        },
-                    }
-                )
+            await emit_step_complete(progress_cb, draft_step, step_idx, total_steps)
 
     if not drafts:
         return [], [], {"model": "error", "response": "Round Robin failed: no drafts produced."}, {"mode": "round_robin"}
@@ -581,8 +623,6 @@ async def run_mode_round_robin(
         "Produce the final answer building on the latest draft; fix any errors and cite context if present."
     )
     start = time.time()
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": step_idx, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "start"}})
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     stage3_result = {
@@ -595,10 +635,13 @@ async def run_mode_round_robin(
         "context_tokens": context_map.get("__base__", context_tokens),
         "duration_ms": elapsed_ms,
     }
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": total_steps, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "finish", "est_tokens": max(len(chair_prompt) // 4, 1)}})
+    await emit_step_complete(progress_cb, stage3_result, total_steps, total_steps)
 
-    metadata = {"mode": "round_robin", "steps": drafts + [dict(stage3_result, role="chair_final")], "iterations": passes}
+    metadata = {
+        "mode": "round_robin",
+        "steps": drafts + [stage3_result],
+        "iterations": passes,
+    }
     return drafts, [], stage3_result, metadata
 
 
@@ -617,16 +660,15 @@ async def run_mode_fight(
     prompt_map = per_model_prompts or {}
     context_map = context_tokens_map or {}
     total_steps = len(models) * 3 + 1
-    if progress_cb:
-        await progress_cb(
-            {
-                "type": "mode_steps",
-                "data": {
-                    "total": total_steps,
-                    "labels": (["answer"] * len(models)) + (["critique"] * len(models)) + (["defense"] * len(models)) + ["chair_final"],
-                },
-            }
-        )
+    await emit_execution_start(
+        progress_cb,
+        "fight",
+        total_steps,
+        (["answer"] * len(models))
+        + (["critique"] * len(models))
+        + (["defense"] * len(models))
+        + ["chair_final"],
+    )
 
     answers = await stage1_collect_responses(
         user_query,
@@ -663,22 +705,9 @@ async def run_mode_fight(
             "\n\n".join([f"{o['model']}:\n{o['response']}" for o in others])
         )
         start = time.time()
-        if progress_cb:
-            await progress_cb(
-                {
-                    "type": "mode_progress",
-                    "data": {
-                        "current": step_idx,
-                        "total": total_steps,
-                        "label": "critique",
-                        "model": ans["model"],
-                        "state": "start",
-                    },
-                }
-            )
         resp = await query_model(ans["model"], [{"role": "user", "content": critique_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        critiques.append({
+        critique_step = {
             "model": ans["model"],
             "response": resp.get("content", "") if resp else "",
             "role": "critique",
@@ -687,21 +716,10 @@ async def run_mode_fight(
             "est_tokens": max(len(critique_prompt) // 4, 1),
             "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
             "duration_ms": elapsed_ms,
-        })
+        }
+        critiques.append(critique_step)
         step_idx += 1
-        if progress_cb:
-            await progress_cb(
-                {
-                    "type": "mode_progress",
-                    "data": {
-                        "current": step_idx,
-                        "total": total_steps,
-                        "label": "critique",
-                        "model": ans["model"],
-                        "state": "finish",
-                    },
-                }
-            )
+        await emit_step_complete(progress_cb, critique_step, step_idx, total_steps)
 
     defenses: List[Dict[str, Any]] = []
     for ans in answers:
@@ -715,22 +733,9 @@ async def run_mode_fight(
             "\n\n".join([f"{c['model']}:\n{c['response']}" for c in peer_crits])
         )
         start = time.time()
-        if progress_cb:
-            await progress_cb(
-                {
-                    "type": "mode_progress",
-                    "data": {
-                        "current": step_idx,
-                        "total": total_steps,
-                        "label": "defense",
-                        "model": ans["model"],
-                        "state": "start",
-                    },
-                }
-            )
         resp = await query_model(ans["model"], [{"role": "user", "content": defense_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        defenses.append({
+        defense_step = {
             "model": ans["model"],
             "response": resp.get("content", "") if resp else "",
             "role": "defense",
@@ -739,21 +744,10 @@ async def run_mode_fight(
             "est_tokens": max(len(defense_prompt) // 4, 1),
             "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
             "duration_ms": elapsed_ms,
-        })
+        }
+        defenses.append(defense_step)
         step_idx += 1
-        if progress_cb:
-            await progress_cb(
-                {
-                    "type": "mode_progress",
-                    "data": {
-                        "current": step_idx,
-                        "total": total_steps,
-                        "label": "defense",
-                        "model": ans["model"],
-                        "state": "finish",
-                    },
-                }
-            )
+        await emit_step_complete(progress_cb, defense_step, step_idx, total_steps)
 
     chair_prompt = (
         f"Debate on: {user_query}\n\nAnswers:\n" +
@@ -765,8 +759,6 @@ async def run_mode_fight(
         "\n\nSummarize consensus, disagreements, and provide the best combined answer."
     )
     start = time.time()
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": step_idx, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "start"}})
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     stage3_result = {
@@ -779,10 +771,9 @@ async def run_mode_fight(
         "context_tokens": context_map.get("__base__", context_tokens),
         "duration_ms": elapsed_ms,
     }
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": total_steps, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "finish", "est_tokens": max(len(chair_prompt)//4,1)}})
+    await emit_step_complete(progress_cb, stage3_result, total_steps, total_steps)
 
-    steps = answers + critiques + defenses + [dict(stage3_result, role="chair_final")]
+    steps = answers + critiques + defenses + [stage3_result]
     metadata = {"mode": "fight", "steps": steps}
     return steps, [], stage3_result, metadata
 
@@ -804,16 +795,15 @@ async def run_mode_stacks(
         return [], [], {"model": "error", "response": "Stacks requires at least two models."}, {"mode": "stacks"}
 
     total_steps = 2 + 1 + (len(models[2:]) if len(models) > 2 else len(models[:2])) + 1 + len(models[:2]) + 1
-    if progress_cb:
-        labels: List[str] = (
-            ["stacks_answer"] * len(models[:2])
-            + ["stacks_merge"]
-            + ["stacks_critique"] * (len(models[2:]) if len(models) > 2 else len(models[:2]))
-            + ["stacks_judge"]
-            + ["stacks_defense"] * len(models[:2])
-            + ["chair_final"]
-        )
-        await progress_cb({"type": "mode_steps", "data": {"total": total_steps, "labels": labels}})
+    labels: List[str] = (
+        ["stacks_answer"] * len(models[:2])
+        + ["stacks_merge"]
+        + ["stacks_critique"] * (len(models[2:]) if len(models) > 2 else len(models[:2]))
+        + ["stacks_judge"]
+        + ["stacks_defense"] * len(models[:2])
+        + ["chair_final"]
+    )
+    await emit_execution_start(progress_cb, "stacks", total_steps, labels)
 
     answers = await stage1_collect_responses(
         user_query,
@@ -832,15 +822,12 @@ async def run_mode_stacks(
     )
     start = time.time()
     cursor = len(answers)
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_merge", "active_model": chairman_model, "state": "start"}})
     merged = await query_model(chairman_model, [{"role": "user", "content": merge_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     merged_text = merged.get("content", "") if merged else ""
     merged_step = {"model": chairman_model, "response": merged_text, "role": "stacks_merge", "prompt_preview": merge_prompt[:500], "prompt_full": merge_prompt, "est_tokens": max(len(merge_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
-    if progress_cb:
-        cursor += 1
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_merge", "active_model": chairman_model, "state": "finish"}})
+    cursor += 1
+    await emit_step_complete(progress_cb, merged_step, cursor, total_steps)
 
     critics_models = models[2:] if len(models) > 2 else models[:2]
     critiques: List[Dict[str, Any]] = []
@@ -848,30 +835,25 @@ async def run_mode_stacks(
         critique_prompt = (
             f"Critique the merged answer. Attack weak spots and missing context. Be concise.\n\nMerged:\n{merged_text}"
         )
-        if progress_cb:
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_critique", "active_model": cm, "state": "start"}})
         start = time.time()
         resp = await query_model(cm, [{"role": "user", "content": critique_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        critiques.append({"model": cm, "response": resp.get("content", "") if resp else "", "role": "stacks_critique", "prompt_preview": critique_prompt[:500], "prompt_full": critique_prompt, "est_tokens": max(len(critique_prompt) // 4, 1), "context_tokens": context_map.get(cm, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms})
-        if progress_cb:
-            cursor += 1
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_critique", "active_model": cm, "state": "finish"}})
+        critique_step = {"model": cm, "response": resp.get("content", "") if resp else "", "role": "stacks_critique", "prompt_preview": critique_prompt[:500], "prompt_full": critique_prompt, "est_tokens": max(len(critique_prompt) // 4, 1), "context_tokens": context_map.get(cm, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+        critiques.append(critique_step)
+        cursor += 1
+        await emit_step_complete(progress_cb, critique_step, cursor, total_steps)
 
     judge_prompt = (
         f"Judge the merged answer vs critiques. Note what holds and fails.\nMerged:\n{merged_text}\n\nCritiques:\n" +
         "\n\n".join([f"{c['model']}:\n{c['response']}" for c in critiques])
     )
     start = time.time()
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_judge", "active_model": chairman_model, "state": "start"}})
     judge = await query_model(chairman_model, [{"role": "user", "content": judge_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     judge_text = judge.get("content", "") if judge else ""
     judge_step = {"model": chairman_model, "response": judge_text, "role": "stacks_judge", "prompt_preview": judge_prompt[:500], "prompt_full": judge_prompt, "est_tokens": max(len(judge_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
-    if progress_cb:
-        cursor += 1
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_judge", "active_model": chairman_model, "state": "finish"}})
+    cursor += 1
+    await emit_step_complete(progress_cb, judge_step, cursor, total_steps)
 
     defenses: List[Dict[str, Any]] = []
     for ans in answers:
@@ -879,32 +861,37 @@ async def run_mode_stacks(
             f"Defend the merged answer vs critiques; fix valid issues briefly.\nMerged:\n{merged_text}\n\nCritiques:\n" +
             "\n\n".join([f"{c['model']}:\n{c['response']}" for c in critiques])
         )
-        if progress_cb:
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_defense", "active_model": ans["model"], "state": "start"}})
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": defense_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        defenses.append({"model": ans["model"], "response": resp.get("content", "") if resp else "", "role": "stacks_defense", "prompt_preview": defense_prompt[:500], "prompt_full": defense_prompt, "est_tokens": max(len(defense_prompt) // 4, 1), "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms})
-        if progress_cb:
-            cursor += 1
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "stacks_defense", "active_model": ans["model"], "state": "finish"}})
+        defense_step = {"model": ans["model"], "response": resp.get("content", "") if resp else "", "role": "stacks_defense", "prompt_preview": defense_prompt[:500], "prompt_full": defense_prompt, "est_tokens": max(len(defense_prompt) // 4, 1), "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+        defenses.append(defense_step)
+        cursor += 1
+        await emit_step_complete(progress_cb, defense_step, cursor, total_steps)
 
     final_prompt = (
         f"Produce final report; present both sides; note judgment rationale.\nJudge:\n{judge_text}\n\nMerged:\n{merged_text}\n\nDefenses:\n" +
         "\n\n".join([f"{d['model']}:\n{d['response']}" for d in defenses])
     )
     start = time.time()
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "start"}})
     final_resp = await query_model(chairman_model, [{"role": "user", "content": final_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     final_text = final_resp.get("content", "") if final_resp else ""
+    chair_step = {
+        "model": chairman_model,
+        "response": final_text,
+        "role": "chair_final",
+        "prompt_preview": final_prompt[:500],
+        "prompt_full": final_prompt,
+        "est_tokens": max(len(final_prompt) // 4, 1),
+        "context_tokens": context_map.get("__base__", context_tokens),
+        "duration_ms": elapsed_ms,
+    }
+    await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
 
-    steps = answers + [merged_step] + critiques + [judge_step] + defenses
-    metadata = {"mode": "stacks", "steps": steps + [{"model": chairman_model, "response": final_text, "role": "chair_final", "prompt_preview": final_prompt[:500], "prompt_full": final_prompt, "est_tokens": max(len(final_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}]}
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": total_steps, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "finish", "est_tokens": max(len(final_prompt)//4,1)}})
-    return steps, [], {"model": chairman_model, "response": final_text, "role": "chair_final", "prompt_preview": final_prompt[:500], "prompt_full": final_prompt, "est_tokens": max(len(final_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}, metadata
+    steps = answers + [merged_step] + critiques + [judge_step] + defenses + [chair_step]
+    metadata = {"mode": "stacks", "steps": steps}
+    return steps, [], chair_step, metadata
 
 
 async def run_mode_complex_iterative(
@@ -929,49 +916,45 @@ async def run_mode_complex_iterative(
     summary = ""
     suggested = ""
     total_steps = 5
-    if progress_cb:
-        await progress_cb({"type": "mode_steps", "data": {"total": total_steps, "labels": ["extract", "expand", "extract", "expand", "chair_final"]}})
+    await emit_execution_start(
+        progress_cb,
+        "complex_iterative",
+        total_steps,
+        ["extract", "expand", "extract", "expand", "chair_final"],
+    )
     step_idx = 0
     for hop in range(4):  # extract/expand twice
         if hop % 2 == 0:
             prompt = f"Extract: summarize intent and constraints; list key facts; propose the next prompt. Context:\n{user_query}\n\nPrior summary:\n{summary}\nPrior suggested:\n{suggested}"
             start = time.time()
-            if progress_cb:
-                await progress_cb({"type": "mode_progress", "data": {"completed": step_idx, "total": total_steps, "label": "extract", "active_model": extract_model, "state": "start"}})
             resp = await query_model(extract_model, [{"role": "user", "content": prompt}])
             elapsed_ms = int((time.time() - start) * 1000)
             text = resp.get("content", "") if resp else ""
-            steps.append({"model": extract_model, "response": text, "role": "extract", "prompt_preview": prompt[:500], "prompt_full": prompt, "est_tokens": max(len(prompt) // 4, 1), "context_tokens": context_map.get(extract_model, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms})
+            extract_step = {"model": extract_model, "response": text, "role": "extract", "prompt_preview": prompt[:500], "prompt_full": prompt, "est_tokens": max(len(prompt) // 4, 1), "context_tokens": context_map.get(extract_model, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+            steps.append(extract_step)
             summary = text or summary
             step_idx += 1
-            if progress_cb:
-                await progress_cb({"type": "mode_progress", "data": {"completed": step_idx, "total": total_steps, "label": "extract", "active_model": extract_model, "state": "finish"}})
+            await emit_step_complete(progress_cb, extract_step, step_idx, total_steps)
         else:
             prompt = f"Expand the prior extract; elaborate actionable detail and improve the suggested prompt.\nPrior summary:\n{summary}\nPrior suggested:\n{suggested}"
             start = time.time()
-            if progress_cb:
-                await progress_cb({"type": "mode_progress", "data": {"completed": step_idx, "total": total_steps, "label": "expand", "active_model": expand_model, "state": "start"}})
             resp = await query_model(expand_model, [{"role": "user", "content": prompt}])
             elapsed_ms = int((time.time() - start) * 1000)
             text = resp.get("content", "") if resp else ""
-            steps.append({"model": expand_model, "response": text, "role": "expand", "prompt_preview": prompt[:500], "prompt_full": prompt, "est_tokens": max(len(prompt) // 4, 1), "context_tokens": context_map.get(expand_model, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms})
+            expand_step = {"model": expand_model, "response": text, "role": "expand", "prompt_preview": prompt[:500], "prompt_full": prompt, "est_tokens": max(len(prompt) // 4, 1), "context_tokens": context_map.get(expand_model, context_map.get("__base__", context_tokens)), "duration_ms": elapsed_ms}
+            steps.append(expand_step)
             suggested = text or suggested
             step_idx += 1
-            if progress_cb:
-                await progress_cb({"type": "mode_progress", "data": {"completed": step_idx, "total": total_steps, "label": "expand", "active_model": expand_model, "state": "finish"}})
+            await emit_step_complete(progress_cb, expand_step, step_idx, total_steps)
 
     final_prompt = f"Use the latest extract/expand chain to answer the original question.\nOriginal question:\n{user_query}\n\nLatest summary:\n{summary}\nLatest expansion:\n{suggested}\n\nFirst, briefly summarize what you saw in each extract/expand step (2 sentences or a short paragraph per item), labeled 'What I saw'. Then provide the final answer."
     start = time.time()
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": step_idx, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "start"}})
     final_resp = await query_model(chairman_model, [{"role": "user", "content": final_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     final_text = final_resp.get("content", "") if final_resp else ""
-    metadata = {"mode": "complex_iterative", "steps": steps}
     chair_step = {"model": chairman_model, "response": final_text, "role": "chair_final", "prompt_preview": final_prompt[:500], "prompt_full": final_prompt, "est_tokens": max(len(final_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": total_steps, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "finish", "est_tokens": chair_step["est_tokens"]}})
-    metadata["steps"] = steps + [chair_step]
+    await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
+    metadata = {"mode": "complex_iterative", "steps": steps + [chair_step]}
     return steps, [], chair_step, metadata
 
 
@@ -989,9 +972,8 @@ async def run_mode_complex_questioning(
     models = arena_models or ARENA_MODELS
     context_map = context_tokens_map or {}
     total_steps = len(models) * 3 + 2
-    if progress_cb:
-        labels = (["answer"] * len(models)) + (["question_self"] * len(models)) + ["brief"] + (["muse"] * len(models)) + ["chair_final"]
-        await progress_cb({"type": "mode_steps", "data": {"total": total_steps, "labels": labels}})
+    labels = (["answer"] * len(models)) + (["question_self"] * len(models)) + ["brief"] + (["muse"] * len(models)) + ["chair_final"]
+    await emit_execution_start(progress_cb, "complex_questioning", total_steps, labels)
     answers = await stage1_collect_responses(
         user_query,
         per_model_prompts,
@@ -1015,11 +997,9 @@ async def run_mode_complex_questioning(
             "\n\n".join([f"{p['model']}:\n{p['response']}" for p in peers])
         )
         start = time.time()
-        if progress_cb:
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "question_self", "active_model": ans["model"], "state": "start"}})
         resp = await query_model(ans["model"], [{"role": "user", "content": question_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        questions.append({
+        question_step = {
             "model": ans["model"],
             "response": resp.get("content", "") if resp else "",
             "role": "question_self",
@@ -1028,10 +1008,10 @@ async def run_mode_complex_questioning(
             "est_tokens": max(len(question_prompt) // 4, 1),
             "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
             "duration_ms": elapsed_ms,
-        })
+        }
+        questions.append(question_step)
         cursor += 1
-        if progress_cb:
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "question_self", "active_model": ans["model"], "state": "finish", "step": questions[-1]}})
+        await emit_step_complete(progress_cb, question_step, cursor, total_steps)
 
     brief_prompt = (
         f"Summarize convergences/divergences and produce a concise brief.\nQuestion:\n{user_query}\n\nAnswers:\n" +
@@ -1040,16 +1020,12 @@ async def run_mode_complex_questioning(
         "\n\n".join([f"{q['model']}:\n{q['response']}" for q in questions])
     )
     start = time.time()
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "brief", "active_model": chairman_model, "state": "start"}})
     brief_resp = await query_model(chairman_model, [{"role": "user", "content": brief_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     brief_text = brief_resp.get("content", "") if brief_resp else ""
     brief_step = {"model": chairman_model, "response": brief_text, "role": "brief", "prompt_preview": brief_prompt[:500], "prompt_full": brief_prompt, "est_tokens": max(len(brief_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
-    brief_step["context_tokens"] = context_map.get("__base__", context_tokens)
     cursor += 1
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "brief", "active_model": chairman_model, "state": "finish", "step": brief_step}})
+    await emit_step_complete(progress_cb, brief_step, cursor, total_steps)
 
     muses: List[Dict[str, Any]] = []
     for ans in answers:
@@ -1057,11 +1033,9 @@ async def run_mode_complex_questioning(
             f"Consider the brief alone (no original context). Add reflections or corrections; avoid inventing new facts.\nBrief:\n{brief_text}"
         )
         start = time.time()
-        if progress_cb:
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "muse", "active_model": ans["model"], "state": "start"}})
         resp = await query_model(ans["model"], [{"role": "user", "content": muse_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
-        muses.append({
+        muse_step = {
             "model": ans["model"],
             "response": resp.get("content", "") if resp else "",
             "role": "muse",
@@ -1070,10 +1044,10 @@ async def run_mode_complex_questioning(
             "est_tokens": max(len(muse_prompt) // 4, 1),
             "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
             "duration_ms": elapsed_ms,
-        })
+        }
+        muses.append(muse_step)
         cursor += 1
-        if progress_cb:
-            await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "muse", "active_model": ans["model"], "state": "finish", "step": muses[-1]}})
+        await emit_step_complete(progress_cb, muse_step, cursor, total_steps)
 
     final_prompt = (
         f"Produce final answer based on debate and muse round; cite from earlier context if needed.\nBrief:\n{brief_text}\n\nMuse:\n" +
@@ -1081,23 +1055,21 @@ async def run_mode_complex_questioning(
         "\n\nFirst, briefly summarize what you saw in each round (answers, self-questions, brief, muse) in 2 sentences or a short paragraph per item, labeled 'What I saw'. Then provide the final answer."
     )
     start = time.time()
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": cursor, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "start"}})
     final_resp = await query_model(chairman_model, [{"role": "user", "content": final_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
     final_text = final_resp.get("content", "") if final_resp else ""
 
     chair_step = {"model": chairman_model, "response": final_text, "role": "chair_final", "prompt_preview": final_prompt[:500], "prompt_full": final_prompt, "est_tokens": max(len(final_prompt) // 4, 1), "context_tokens": context_map.get("__base__", context_tokens), "duration_ms": elapsed_ms}
-    steps = answers + questions + [brief_step] + muses
-    metadata = {"mode": "complex_questioning", "steps": steps + [chair_step]}
-    if progress_cb:
-        await progress_cb({"type": "mode_progress", "data": {"completed": total_steps, "total": total_steps, "label": "chair_final", "active_model": chairman_model, "state": "finish", "est_tokens": chair_step["est_tokens"], "step": chair_step}})
+    await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
+    steps = answers + questions + [brief_step] + muses + [chair_step]
+    metadata = {"mode": "complex_questioning", "steps": steps}
     return steps, [], chair_step, metadata
 
 
 # Mode runner registry
 MODE_RUNNERS: Dict[str, Callable[..., Any]] = {
     "council": run_mode_council,
+    "baseline": run_mode_council,
     "round_robin": run_mode_round_robin,
     "fight": run_mode_fight,
     "stacks": run_mode_stacks,

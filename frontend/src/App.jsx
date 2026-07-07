@@ -29,7 +29,7 @@ function App() {
     if (!currentConversationId || !step) return;
     setLiveStepsByConversation((prev) => {
       const existing = prev[currentConversationId] || [];
-      const next = [...existing, step];
+      const next = [...existing, { ...step, __idx: existing.length }];
       return { ...prev, [currentConversationId]: next };
     });
   };
@@ -150,22 +150,61 @@ function App() {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
               lastMsg.stage1 = event.data;
+              lastMsg.metadata = {
+                ...(lastMsg.metadata || {}),
+                ...(event.metadata || {}),
+              };
               lastMsg.loading.stage1 = false;
               return { ...prev, messages };
             });
             break;
+          case 'execution_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              if (event.data?.steps) {
+                lastMsg.metadata = {
+                  ...(lastMsg.metadata || {}),
+                  steps: event.data.steps,
+                  mode: event.data.mode ?? lastMsg.metadata?.mode,
+                };
+              }
+              return { ...prev, messages };
+            });
+            break;
+          case 'execution_start':
           case 'mode_steps':
-            if (event.data?.total) {
-              setModeProgress({ current: 0, total: event.data.total, label: 'Starting...', activeModel: null });
+            if (event.data?.step_total ?? event.data?.total) {
+              setModeProgress({
+                current: 0,
+                total: event.data.step_total ?? event.data.total,
+                label: 'Starting...',
+                activeModel: null,
+              });
+            }
+            break;
+          case 'step_complete':
+            if (event.data?.step) {
+              pushLiveStep(event.data.step);
+            }
+            if (event.data) {
+              const completed = event.data.step_index ?? event.data.completed ?? event.data.current ?? 0;
+              setModeProgress((prev) => ({
+                current: completed ?? prev.current ?? 0,
+                total: event.data.step_total ?? event.data.total ?? prev.total ?? 0,
+                label: event.data.label ?? event.data.role ?? prev.label ?? '',
+                activeModel: event.data.active_model ?? event.data.model ?? prev.activeModel ?? null,
+                state: event.data.state ?? prev.state,
+              }));
             }
             break;
           case 'mode_progress':
             if (event.data) {
-              const completed = event.data.completed ?? event.data.current ?? 0;
+              const completed = event.data.step_index ?? event.data.completed ?? event.data.current ?? 0;
               setModeProgress((prev) => ({
                 current: completed ?? prev.current ?? 0,
-                total: event.data.total ?? prev.total ?? 0,
-                label: event.data.label ?? prev.label ?? '',
+                total: event.data.step_total ?? event.data.total ?? prev.total ?? 0,
+                label: event.data.label ?? event.data.role ?? prev.label ?? '',
                 activeModel: event.data.active_model ?? event.data.model ?? prev.activeModel ?? null,
                 state: event.data.state ?? prev.state,
               }));
@@ -327,6 +366,7 @@ function App() {
         breadcrumbs={breadcrumbsByConversation[currentConversationId] || []}
         theme={theme}
         liveSteps={liveStepsByConversation[currentConversationId] || []}
+        repoRoot={repoRoot}
       />
     </div>
   );

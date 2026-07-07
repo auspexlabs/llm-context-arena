@@ -385,7 +385,25 @@ async def send_message_stream(
 
             stage1_results, stage2_results, stage3_result, mode_metadata = await runner_task
 
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "stage1_complete",
+                        "data": stage1_results,
+                        "metadata": {
+                            "steps": mode_metadata.get("steps"),
+                            "mode": mode_metadata.get("mode")
+                            or conversation.get("mode", "council"),
+                            "label_to_model": mode_metadata.get("label_to_model"),
+                            "aggregate_rankings": mode_metadata.get(
+                                "aggregate_rankings"
+                            ),
+                        },
+                    }
+                )
+                + "\n\n"
+            )
 
             if not stage1_results:
                 err_msg = "No arena responses received; check model availability or API key."
@@ -410,9 +428,11 @@ async def send_message_stream(
                 stage_metadata = {
                     "label_to_model": mode_metadata.get("label_to_model"),
                     "aggregate_rankings": mode_metadata.get("aggregate_rankings"),
+                    "steps": mode_metadata.get("steps"),
                     "directives": directives.dict(),
                     "warnings": directives.warnings,
-                    "mode": conversation.get("mode", "council"),
+                    "mode": mode_metadata.get("mode")
+                    or conversation.get("mode", "council"),
                     "chairman_model": chairman_model_local,
                     "arena_models": arena_models_local,
                     "context_from_last_chair": context_from_last_chair,

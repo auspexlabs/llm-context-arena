@@ -6,26 +6,26 @@ Companion to [`piv-001-agent-control-plane.md`](piv-001-agent-control-plane.md).
 
 ## BLOCKER — Mode turn routing (DIS-002) — do before agent API
 
-See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). Advanced modes run correctly in `arena.py` but API/UI still use Council `stage1→stage2→stage3` envelope.
+See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). **Remediated by DEC-014** (2026-07-07).
 
-- [ ] **Streaming:** per-step SSE (`step_complete`), not one `stage1_complete` after full runner
-- [ ] **Backend return contract:** separate `execution.steps` from council `stage1`/`stage2`; stop stuffing fight/stacks/RR into `stage1`
-- [ ] **Progress:** unified `step_index`/`step_total`; fix parallel `stage1_collect_responses` counter; every progress event carries `step`
-- [ ] **UI mode router:** council → Stage1/2/3; advanced modes → RoundTrack + role panels (hide misleading Stage1)
-- [ ] **RoundTrack sync:** stable step ids; fix focus jump to Stage1/tab (`__idx`)
-- [ ] **Fight-only transcript:** generalize or remove duplicate partial UI
-- [ ] **Council metadata.steps:** include real rankings content or drop empty stub
+- [x] **Streaming:** per-step SSE (`step_complete`), not one `stage1_complete` after full runner
+- [x] **Backend return contract:** separate `execution.steps` from council `stage1`/`stage2`; stop stuffing fight/stacks/RR into `stage1`
+- [x] **Progress:** unified `step_index`/`step_total`; fix parallel `stage1_collect_responses` counter; every progress event carries `step`
+- [x] **UI mode router:** council → Stage1/2/3; advanced modes → RoundTrack + role panels (hide misleading Stage1)
+- [x] **RoundTrack sync:** stable step ids; fix focus jump to Stage1/tab (`__idx`)
+- [x] **Fight-only transcript:** generalize or remove duplicate partial UI
+- [x] **Council metadata.steps:** include real rankings content or drop empty stub
 
-**Do not build `POST /turns/advance` on the current tuple shape — agents would inherit the lie.**
+**Agent `POST /turns/advance` may proceed on the normalized contract (PIV-001 Phase 1).**
 
 ---
 
 ## Phase 0 — Quick wins (unblock prototyping)
 
 ### Bugs / jank (watch mode blockers)
-- [ ] Pass `repoRoot` from `App.jsx` → `ChatInterface` (git reindex + freshness broken in chat)
-- [ ] Normalize SSE `mode_progress` (`current` vs `completed`) in `arena.py` + frontend consumers
-- [ ] Fight / stacks / round_robin: stop overloading `stage1` with all pipeline steps; use `metadata.steps` for timeline
+- [x] Pass `repoRoot` from `App.jsx` → `ChatInterface` (git reindex + freshness broken in chat)
+- [x] Normalize SSE `mode_progress` (`current` vs `completed`) in `arena.py` + frontend consumers
+- [x] Fight / stacks / round_robin: stop overloading `stage1` with all pipeline steps; use `metadata.steps` for timeline
 - [ ] Client abort (`AbortController`) should cancel backend arena task, not orphan in-flight runs
 - [ ] Deduplicate directive parsing: remove `ChatInterface.parseDirectives()` divergence from `backend/directives.py`
 

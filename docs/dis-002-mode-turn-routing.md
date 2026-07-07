@@ -1,9 +1,9 @@
 # DIS-002: Advanced mode turn routing is structurally broken
 
-**Status:** observed · **date:** 2026-07-07  
-**Ledger stub:** `docs/decision_log.md` → `DIS-002`  
-**Blocks:** `PIV-001` agent control plane (agents need honest step boundaries)  
-**Fix checklist:** top of [`piv-001-checklist.md`](piv-001-checklist.md)
+**Status:** remediated by DEC-014 · **date:** 2026-07-07  
+**Ledger stub:** `docs/decision_log.md` → `DIS-002`, `DEC-014`  
+**Blocks:** ~~`PIV-001` agent control plane~~ unblocked for Phase 1  
+**Fix checklist:** [`piv-001-checklist.md`](piv-001-checklist.md) (all DIS-002 items checked)
 
 ---
 

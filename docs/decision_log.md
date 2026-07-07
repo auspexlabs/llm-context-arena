@@ -258,9 +258,14 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **impact:** No query-time auto-reindex (user-triggered only). Git drift uses the same candidate path rules as `build_git_snapshot`.
 
 ### DIS-002: Advanced mode turns routed through Council-shaped API/UI — broken
-- **date:** 2026-07-07 · **status:** observed · **triggered_by:** PIV-001 planning; user report that turns may be broken on advanced modes · **docs_updated:** `docs/decision_log.md`, `docs/dis-002-mode-turn-routing.md`, `docs/piv-001-checklist.md` · **related:** `PIV-001`, `DEC-007` · **blocks:** `PIV-001` Phase 1+ agent step API
+- **date:** 2026-07-07 · **status:** remediated by DEC-014 · **triggered_by:** PIV-001 planning; user report that turns may be broken on advanced modes · **docs_updated:** `docs/decision_log.md`, `docs/dis-002-mode-turn-routing.md`, `docs/piv-001-checklist.md` · **related:** `PIV-001`, `DEC-007` · **blocks:** `PIV-001` Phase 1+ agent step API
 - **finding:** `run_mode_fight` / `stacks` / `round_robin` / `complex_*` return full playthrough as `stage1_results` with empty `stage2`. Streaming holds `stage1_complete` until entire runner finishes. UI renders all steps through Council `Stage1` (“Individual Responses”). Live timeline starved (`emit_steps=False`, missing `step` on progress events). RoundTrack grouping exists but desyncs from stage tabs.
 - **implication:** Multi-turn protocols work in backend logic; presentation and API contract do not. Fix DIS-002 before agent `advance` API or observatory UI redesign.
+
+### DEC-014: Fix advanced mode turn routing (DIS-002)
+- **date:** 2026-07-07 · **status:** accepted · **triggered_by:** `DIS-002`; user request to fix turn routing before PIV-001 · **docs_updated:** `docs/decision_log.md`, `backend/arena.py`, `backend/main.py`, `frontend/src/App.jsx`, `frontend/src/components/ChatInterface.jsx`, `tests/unit/test_arena_normalize.py` · **related:** `PIV-001`, `DIS-002` · **resolves:** `DIS-002`
+- **decision:** Per-step `step_complete` SSE + `normalize_arena_results()` (advanced modes: empty `stage1`, full `metadata.steps`). Unified `step_index`/`step_total` progress. UI: council → Stage1/2/3; advanced → RoundTrack timeline only. Register `baseline` → council runner.
+- **impact:** Unblocks honest execution contract for PIV-001 agent step API.
 
 ### PIV-001: Agent control plane — agents drive, UI observes, humans await
 - **date:** 2026-07-07 · **status:** accepted · **triggered_by:** product direction review; agent-orchestration vision for multi-model deliberation + CodeRAG · **docs_updated:** `docs/decision_log.md`, `docs/piv-001-agent-control-plane.md`, `docs/piv-001-checklist.md` · **related:** `DEC-001`, `DEC-007`, `DEC-010`, `DEC-011`, `DEC-013`, `DEF-003`, `DEF-004` · **doc:** [`docs/piv-001-agent-control-plane.md`](piv-001-agent-control-plane.md)
