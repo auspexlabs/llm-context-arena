@@ -27,7 +27,16 @@ dependencies = [
     "pyyaml>=6.0",
     "pylate>=1.6.0",
     "voyager>=2.1.0",
+    "torch==2.11.0",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
 
 [project.optional-dependencies]
 dev = [

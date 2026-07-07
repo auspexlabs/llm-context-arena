@@ -36,7 +36,8 @@ ColBERT (default) and BGE rerank run locally via `pylate` and `sentence-transfor
 
 ### Semantic retrieval
 - `SEMANTIC_BACKEND` — `colbert` (default) or `biencoder`
-- `COLBERT_LEARNED` (default `true`), `COLBERT_MODEL`, `COLBERT_DEVICE`
+- `COLBERT_LEARNED` (default `true`), `COLBERT_MODEL`
+- `COLBERT_DEVICE` (default `auto`) — `auto` uses CUDA when available, else CPU; override with `cuda` or `cpu`
 
 ### Rerank + retrieval tuning
 - `RERANK_MODEL` (default `BAAI/bge-reranker-base`)

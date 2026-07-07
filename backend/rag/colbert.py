@@ -105,7 +105,7 @@ def build_semantic_index(
         "yes",
     }
     model_name = os.getenv("COLBERT_MODEL", app_config.COLBERT_MODEL)
-    device = os.getenv("COLBERT_DEVICE", app_config.COLBERT_DEVICE)
+    device = app_config.get_colbert_device()
 
     if learned and _pylate_available():
         try:

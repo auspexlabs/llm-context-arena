@@ -1,7 +1,12 @@
 """Configuration for LLM Context Arena."""
 
+import logging
 import os
+from typing import Optional
+
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -55,7 +60,35 @@ GRAPH_MODE = os.getenv("GRAPH_MODE", "append").lower()  # append | resort
 SEMANTIC_BACKEND = os.getenv("SEMANTIC_BACKEND", "colbert").lower()  # colbert | biencoder
 COLBERT_LEARNED = os.getenv("COLBERT_LEARNED", "true").lower() in {"1", "true", "yes"}
 COLBERT_MODEL = os.getenv("COLBERT_MODEL", "colbert-ir/colbertv2.0")
-COLBERT_DEVICE = os.getenv("COLBERT_DEVICE", "cpu")
+COLBERT_DEVICE = os.getenv("COLBERT_DEVICE", "auto")  # auto | cuda | cpu
+_COLBERT_DEVICE_RESOLVED: Optional[str] = None
+
+
+def get_colbert_device() -> str:
+    """Resolve ColBERT device: auto (default) uses cuda when available, else cpu."""
+    global _COLBERT_DEVICE_RESOLVED
+    if _COLBERT_DEVICE_RESOLVED is not None:
+        return _COLBERT_DEVICE_RESOLVED
+
+    raw = (os.getenv("COLBERT_DEVICE") or "auto").strip().lower()
+    if raw in {"", "auto"}:
+        try:
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
+        logger.info("COLBERT_DEVICE=auto resolved to %s", device)
+    elif raw in {"cuda", "gpu"}:
+        device = "cuda"
+    elif raw == "cpu":
+        device = "cpu"
+    else:
+        device = raw
+        logger.warning("Unknown COLBERT_DEVICE=%r; using as-is", raw)
+
+    _COLBERT_DEVICE_RESOLVED = device
+    return device
 RETRIEVE_CANDIDATES = int(os.getenv("RETRIEVE_CANDIDATES", "50"))
 RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "20"))
 CONTEXT_CHUNK_CAP = int(os.getenv("CONTEXT_CHUNK_CAP", "60"))

@@ -233,6 +233,12 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **finding:** Production variant F behaves as designed: embedding router sets `architectural` → `graph_append=False`; ColBERT+RRF finds correct code pre-rerank (`arena.py:run_full_arena`, `context_engine.py`, `main.py:send_message_stream`). **Jina v3 rerank** then promotes `docs/hyp002_results.json`, `docs/decision_log.md`, and `eval_*.py` above source files on broad queries — reranker trained on prose, not code AST chunks.
 - **implication:** Graph pollution fixed; **rerank + index composition** are the remaining precision risks. Not a router regression.
 
+### DEC-012: Default ColBERT to GPU with CPU fallback; pin torch CUDA wheel
+- **date:** 2026-07-07 · **status:** accepted · **triggered_by:** local GPU index benchmark (~14× faster than CPU on RTX 3090 Ti); unpinned `torch 2.11+cu130` reported `cuda_available=False` on CUDA 12.5 driver · **docs_updated:** `docs/decision_log.md`, `backend/config.py`, `backend/rag/colbert.py`, `pyproject.toml`, `uv.lock`, `RAG_LMSTUDIO.md` · **related:** `DEC-005`, `DIS-001`
+- **decision:** **`COLBERT_DEVICE=auto`** (default when unset): try `cuda`, fall back to `cpu`. Explicit overrides: `COLBERT_DEVICE=cuda|cpu`. Resolve once via `get_colbert_device()` in `backend/config.py`; log resolved device on auto. Pin **`torch==2.11.0`** from PyTorch **`cu126`** index (`pyproject.toml` / `uv.lock`) — satisfies `pylate`/`fast-plaid` and avoids the broken cu130 wheel on CUDA 12.5 hosts.
+- **rationale:** CPU ColBERT encode dominated index rebuild (~0.28 s/chunk); GPU cut 396-chunk index from ~110 s to ~7.6 s. Unpinned torch pulled a cu130 build that failed CUDA init on the dev box. Auto-default keeps laptops/CI on CPU without env churn. `cu124` tops out at torch 2.6, below `fast-plaid`’s floor.
+- **impact:** `build_semantic_index()` uses `get_colbert_device()`; `COLBERT_DEVICE` env doc updated. Re-run `uv lock` after pin. Users without NVIDIA GPU need no change.
+
 ### DEF-004: Defer conditional rerank and index hygiene for eval/doc artifacts
 - **date:** 2026-07-07 · **status:** active · **triggered_by:** `DIS-001` · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-011`, `DEC-008`
 - **decision:** Defer implementation. Interim guidance: exclude `docs/*_results*.json` from user indexes where possible; consider `RERANK_ENABLED=false` or BGE override if latency/precision hurt.
