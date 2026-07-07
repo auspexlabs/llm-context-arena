@@ -13,14 +13,14 @@ This fork extends that foundation into an **arena** — same local-first vibe-co
 | Area | Addition |
 |------|----------|
 | **Modes** | Six orchestration strategies: Council, Round Robin, Fight, Stacks, Complex Iterative, Complex Questioning |
-| **RAG** | Per-conversation repo indexing (ZIP or git snapshot) via LM Studio embeddings + FAISS *(being upgraded — see P1 below)* |
+| **RAG** | CodeRAG pipeline: tree-sitter chunking, learned ColBERT (default), entity/graph hybrid, RRF fusion, Jina rerank, embedding query router |
 | **Context** | Per-model token budgets, chairman summarization when context is huge, manual file picker |
 | **Directives** | Inline `@norag`, `@summarize`, `@tokenbudget`, `@cite`, `@lastchair`, and more |
-| **UI** | Mode timeline, context panel, repo dropzone, streaming progress, light/dark theme |
+| **UI** | Mode timeline, context panel, repo dropzone, stale-index warnings, in-product reindex, streaming progress, light/dark theme |
 
-**Roadmap:** Real code-aware RAG (phased CodeRAG — see `docs/decision_log.md` DEC-001). Bicameral Mind mode and cost tracking are planned.
+**Roadmap:** Bicameral Mind mode, cost tracking, conditional rerank / index hygiene (see `docs/decision_log.md` DEF-004). Retrieval eval harnesses: `python -m backend.run_hyp001`, `python -m backend.run_hyp002`.
 
-**Repo:** [github.com/auspexlabs/llm-context-arena](https://github.com/auspexlabs/llm-context-arena) (private)
+**Repo:** [github.com/auspexlabs/llm-context-arena](https://github.com/auspexlabs/llm-context-arena)
 
 ---
 
@@ -33,7 +33,7 @@ cp .env.example .env   # add OPENROUTER_API_KEY
 ./start.sh             # backend :8001, frontend :5173
 ```
 
-For RAG, run LM Studio with embedding models — see [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md).
+**RAG defaults (ColBERT + local rerank) need no LM Studio.** LM Studio is only required if you set `SEMANTIC_BACKEND=biencoder` — see [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md). First ColBERT index on GPU is much faster (`COLBERT_DEVICE=auto`); CPU fallback works everywhere.
 
 ---
 
@@ -169,10 +169,11 @@ Query ──► ALL ANSWER ──► ALL QUESTION OWN ANSWERS ──► Chairman
 Built on top of Karpathy's original council:
 
 ### Local RAG System
-- **ZIP repo upload** per conversation - drop a codebase, get context-aware answers
-- **FAISS vector indexing** with LM Studio embeddings (`nomic-embed-text-v1.5`)
-- **Two-stage retrieval**: vector search → BGE reranker → neighbor chunk expansion
-- **Git-based indexing**: build context from `git ls-tree` + working tree changes
+- **ZIP or git snapshot** per conversation — drop a `.zip` or reindex from a configured repo root
+- **CodeRAG indexing**: tree-sitter AST chunking (Python, Rust, JS/TS/TSX, Go), entity index, code graph, manifest-based delta reindex
+- **Semantic search** (default `SEMANTIC_BACKEND=colbert`): learned PyLate ColBERT per conversation; optional `biencoder` path uses FAISS + LM Studio nomic embeddings
+- **Query-time retrieval** (variant F): ColBERT top-K ∥ entity seed → **RRF fusion** → **Jina v3 cross-encoder rerank** → README demotion → **append-only graph** neighbors (embedding query router picks trace vs architectural policy)
+- **Index freshness**: UI polls `GET /api/index_manifest`, warns when git or snapshot drifted, one-click reindex (`POST .../reindex` or `.../reindex_git`)
 
 ### Context Intelligence
 - **Per-model token budgets** with safety margins (85% of context window)
@@ -198,6 +199,8 @@ Control behavior inline with your query:
 - **Stop button** to abort streaming responses
 - **Collapsible context panel** showing RAG sources, scores, token counts
 - **File tree browser** for manual context selection
+- **Stale index banner** when the codebase changed since last index (git drift or snapshot drift) with reindex CTA
+- **Settings panel** for arena models, chairman, and repo root
 - **Upload progress** with indexing feedback
 - **Scroll-to-bottom** shortcut
 
@@ -226,14 +229,18 @@ CHAIRMAN_MODEL = "openai/gpt-5.1"
 # Required
 OPENROUTER_API_KEY=sk-or-v1-...
 
-# LM Studio (bi-encoder embeddings for FAISS path only)
+# LM Studio (bi-encoder embeddings for FAISS path only — skip if SEMANTIC_BACKEND=colbert)
 LMSTUDIO_BASE_URL=http://localhost:1234/v1
 LMSTUDIO_EMBED_MODEL=text-embedding-nomic-embed-text-v1.5
 
-# Retrieval pipeline (default: ColBERT semantic + local BGE rerank)
+# Retrieval pipeline (production defaults — see docs/decision_log.md DEC-010/011)
 SEMANTIC_BACKEND=colbert
 COLBERT_LEARNED=true
-RERANK_MODEL=BAAI/bge-reranker-base
+COLBERT_DEVICE=auto          # cuda when available, else cpu
+QUERY_ROUTER=embedding       # embedding | regex
+FUSION_MODE=rrf              # rrf | max_score
+GRAPH_MODE=append              # append | resort
+RERANK_MODEL=jinaai/jina-reranker-v3
 RERANK_ENABLED=true
 RETRIEVE_CANDIDATES=50
 RERANK_TOP_K=20
@@ -258,7 +265,7 @@ Output allowance: 4000 tokens (`OUTPUT_TOKEN_ALLOWANCE=4000`)
 
 - **Backend:** FastAPI, Python 3.10+, async httpx, OpenRouter API
 - **Frontend:** React 19, Vite 7, react-markdown, react-dropzone
-- **RAG:** CodeRAG (tree-sitter chunking, entity/graph hybrid), ColBERT or FAISS semantic, BGE cross-encoder rerank; LM Studio for bi-encoder embeddings when `SEMANTIC_BACKEND=biencoder`
+- **RAG:** CodeRAG (tree-sitter chunking, entity/graph hybrid, RRF fusion, embedding query router), ColBERT (default) or FAISS bi-encoder, Jina v3 cross-encoder rerank (`sentence-transformers`); LM Studio only for bi-encoder embeddings; PyTorch cu126 wheel for GPU ColBERT encode
 - **Storage:** JSON files in `data/conversations/`
 
 ---
@@ -278,9 +285,10 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 
 ## Documentation
 
-- [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md) - LM Studio setup and RAG details
-- [PLAN.md](PLAN.md) - Feature roadmap and mode specifications
-- [COUNCIL_OG_README.md](COUNCIL_OG_README.md) - Original Karpathy README
+- [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md) — RAG setup, env vars, retrieval topology, indexing APIs
+- [docs/decision_log.md](docs/decision_log.md) — append-only architecture / policy ledger (ADRLight-style)
+- [PLAN.md](PLAN.md) — Feature roadmap and mode specifications
+- [COUNCIL_OG_README.md](COUNCIL_OG_README.md) — Original Karpathy README
 
 ---
 
