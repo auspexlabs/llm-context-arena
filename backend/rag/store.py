@@ -59,6 +59,20 @@ class ConversationStore:
     def _colbert_path(self) -> Path:
         return Path("data") / "conversations" / f"{self.conversation_id}_colbert"
 
+    def _uses_faiss_biencoder(self) -> bool:
+        from ..config import SEMANTIC_BACKEND
+
+        return SEMANTIC_BACKEND == "biencoder"
+
+    def has_retrievable_index(self) -> bool:
+        if self.vectorstore is not None or self._faiss_path().exists():
+            return True
+        if self.chunks and self.colbert_index is not None:
+            return True
+        if self._chunks_path().exists() and self._colbert_path().exists():
+            return True
+        return bool(self.chunks)
+
     def build_from_chunks(
         self,
         chunks: List[CodeChunk],
@@ -71,20 +85,27 @@ class ConversationStore:
         self.graph = CodeGraph.from_chunks(chunks, self.entity_index)
         self.colbert_index = build_semantic_index(chunks, self._colbert_path(), rebuild=True)
 
-        texts: List[str] = []
-        metadatas: List[dict] = []
-        for idx, chunk in enumerate(chunks):
-            chunk.metadata["chunk_index"] = idx
-            texts.append(chunk.index_text or chunk.content)
-            metadatas.append(chunk.to_faiss_metadata(idx))
-
-        if not texts:
+        if not chunks:
             return 0
 
-        self.vectorstore = FAISS.from_texts(texts, self.embedder, metadatas=metadatas)
+        if self._uses_faiss_biencoder():
+            texts: List[str] = []
+            metadatas: List[dict] = []
+            for idx, chunk in enumerate(chunks):
+                chunk.metadata["chunk_index"] = idx
+                texts.append(chunk.index_text or chunk.content)
+                metadatas.append(chunk.to_faiss_metadata(idx))
 
-        self._faiss_path().parent.mkdir(parents=True, exist_ok=True)
-        self.vectorstore.save_local(str(self._faiss_path()))
+            self.vectorstore = FAISS.from_texts(texts, self.embedder, metadatas=metadatas)
+            self._faiss_path().parent.mkdir(parents=True, exist_ok=True)
+            self.vectorstore.save_local(str(self._faiss_path()))
+        else:
+            self.vectorstore = None
+            logger.info(
+                "SEMANTIC_BACKEND=colbert — skipping LM Studio FAISS for %s",
+                self.conversation_id,
+            )
+
         self._persist_sidecars(root_dir, manifest_path)
         return len(chunks)
 
@@ -129,20 +150,7 @@ class ConversationStore:
             logger.exception("Failed to load chunks for %s", self.conversation_id)
             return False
 
-    def load(self) -> bool:
-        faiss_path = self._faiss_path()
-        if not faiss_path.exists():
-            return False
-        try:
-            self.vectorstore = FAISS.load_local(
-                str(faiss_path),
-                self.embedder,
-                allow_dangerous_deserialization=True,
-            )
-        except Exception:
-            logger.exception("Failed to load FAISS for %s", self.conversation_id)
-            return False
-
+    def _load_sidecars(self) -> bool:
         if self._chunks_path().exists():
             try:
                 with open(self._chunks_path(), "rb") as f:
@@ -150,7 +158,15 @@ class ConversationStore:
                 self.chunks = payload.get("chunks", {})
                 self.chunk_order = payload.get("order", list(self.chunks.keys()))
             except Exception:
-                self._hydrate_chunks_from_faiss()
+                logger.exception("Failed to load chunks for %s", self.conversation_id)
+                return False
+        elif self.vectorstore is not None:
+            self._hydrate_chunks_from_faiss()
+        else:
+            return False
+
+        if not self.chunks:
+            return False
 
         if self._entity_path().exists():
             try:
@@ -170,6 +186,27 @@ class ConversationStore:
             rebuild=False,
         )
         return True
+
+    def load(self) -> bool:
+        faiss_path = self._faiss_path()
+        if faiss_path.exists():
+            try:
+                self.vectorstore = FAISS.load_local(
+                    str(faiss_path),
+                    self.embedder,
+                    allow_dangerous_deserialization=True,
+                )
+            except Exception:
+                logger.exception("Failed to load FAISS for %s", self.conversation_id)
+                self.vectorstore = None
+
+        if self.vectorstore is not None:
+            return self._load_sidecars()
+
+        if self._uses_faiss_biencoder():
+            return False
+
+        return self._load_sidecars()
 
     def _hydrate_chunks_from_faiss(self):
         if self.vectorstore is None:
@@ -250,8 +287,9 @@ def get_or_load_store(
     embedder: Embedder,
     data_dir: Optional[Path] = None,
 ) -> ConversationStore:
-    if conversation_id in _STORES and _STORES[conversation_id].vectorstore is not None:
-        return _STORES[conversation_id]
+    cached = _STORES.get(conversation_id)
+    if cached is not None and cached.has_retrievable_index():
+        return cached
 
     store = ConversationStore(conversation_id, data_dir or Path("data/conversations"), embedder)
     if store.load():

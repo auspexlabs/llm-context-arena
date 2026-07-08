@@ -421,6 +421,9 @@ export default function ChatInterface({
       const resp = repoRoot
         ? await api.reindexGit(conversation.id, repoRoot)
         : await api.reindexSnapshot(conversation.id);
+      if (resp?.status === 'error') {
+        throw new Error(resp.message || 'Reindex failed');
+      }
       setReindexStatus(resp.message || 'Reindexed.');
       refreshRepoTree();
     } catch (err) {

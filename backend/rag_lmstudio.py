@@ -29,7 +29,10 @@ def index_repo_zip(zip_path: str, convo_id: str) -> str:
 
 
 def index_repo_dir(root_dir: Path, convo_id: str) -> str:
-    return _p().index_from_directory(root_dir, convo_id).message
+    result = _p().index_from_directory(root_dir, convo_id)
+    if not result.success:
+        raise RuntimeError(result.message or "Indexing failed")
+    return result.message
 
 
 def build_worktree_snapshot(

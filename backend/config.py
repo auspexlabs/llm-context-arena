@@ -74,23 +74,34 @@ COLBERT_DEVICE = os.getenv("COLBERT_DEVICE", "auto")  # auto | cuda | cpu
 _COLBERT_DEVICE_RESOLVED: Optional[str] = None
 
 
+def _cuda_usable_for_colbert() -> bool:
+    """True only if torch can allocate on CUDA (catches missing libcudnn, etc.)."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        torch.zeros(1, device="cuda")
+        return True
+    except Exception as exc:
+        logger.warning("CUDA probe failed (%s); ColBERT will use CPU", exc)
+        return False
+
+
 def get_colbert_device() -> str:
-    """Resolve ColBERT device: auto (default) uses cuda when available, else cpu."""
+    """Resolve ColBERT device: auto prefers cuda when usable, else cpu."""
     global _COLBERT_DEVICE_RESOLVED
     if _COLBERT_DEVICE_RESOLVED is not None:
         return _COLBERT_DEVICE_RESOLVED
 
     raw = (os.getenv("COLBERT_DEVICE") or "auto").strip().lower()
     if raw in {"", "auto"}:
-        try:
-            import torch
-
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        except ImportError:
-            device = "cpu"
+        device = "cuda" if _cuda_usable_for_colbert() else "cpu"
         logger.info("COLBERT_DEVICE=auto resolved to %s", device)
     elif raw in {"cuda", "gpu"}:
-        device = "cuda"
+        device = "cuda" if _cuda_usable_for_colbert() else "cpu"
+        if device == "cpu":
+            logger.warning("COLBERT_DEVICE=cuda requested but CUDA unusable; using cpu")
     elif raw == "cpu":
         device = "cpu"
     else:

@@ -264,7 +264,7 @@ class LMStudioRAGProvider(RAGProvider):
 
     def is_indexed(self, conversation_id: str) -> bool:
         store = self._store(conversation_id)
-        return store.vectorstore is not None or store._faiss_path().exists()
+        return store.has_retrievable_index()
 
     def clear_index(self, conversation_id: str) -> bool:
         store = self._store(conversation_id)

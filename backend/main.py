@@ -716,11 +716,18 @@ async def reindex_git(conversation_id: str, include_untracked: bool | None = Non
             "repo_root": str(root),
         }
     except Exception as e:
+        err = str(e)
+        hint = ""
+        if "Connection error" in err or "Connection refused" in err:
+            hint = (
+                " LM Studio is only required when SEMANTIC_BACKEND=biencoder. "
+                "With colbert (default), ensure ColBERT can load — try COLBERT_DEVICE=cpu in .env."
+            )
         return JSONResponse(
             status_code=500,
             content={
                 "status": "error",
-                "message": f"Failed to reindex from {root}: {e}",
+                "message": f"Snapshot copied but indexing failed: {err}.{hint}",
                 "include_untracked": include_untracked,
                 "repo_root": str(root),
             },

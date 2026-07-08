@@ -211,7 +211,7 @@ export const api = {
     );
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json') ? await response.json() : null;
-    if (!response.ok) {
+    if (!response.ok || data?.status === 'error') {
       const msg = data?.message || `Failed to reindex snapshot (status ${response.status})`;
       throw new Error(msg);
     }
@@ -233,7 +233,7 @@ export const api = {
     }
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json') ? await response.json() : null;
-    if (!response.ok) {
+    if (!response.ok || data?.status === 'error') {
       const msg = data?.message || `Failed to reindex from git (status ${response.status})`;
       throw new Error(msg);
     }
