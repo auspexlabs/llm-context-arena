@@ -143,6 +143,7 @@ class ArenaMetadata(BaseModel):
     steps: Optional[List[Dict[str, Any]]] = None
     directives: Optional[Dict[str, Any]] = None
     warnings: List[str] = Field(default_factory=list)
+    model_failures: Optional[List[Dict[str, Any]]] = None
     total_execution_time_ms: Optional[float] = None
 
     class Config:

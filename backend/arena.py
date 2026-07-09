@@ -3,7 +3,12 @@
 import asyncio
 import time
 from typing import List, Dict, Any, Tuple, Optional, Callable
-from .openrouter import query_models_parallel, query_model
+from .openrouter import (
+    query_models_parallel,
+    query_model,
+    is_usable_response,
+    failure_record,
+)
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
 from .cost_tracking import apply_usage_fields, sum_usage_fields, summarize_turn_cost
 
@@ -90,6 +95,7 @@ async def stage1_collect_responses(
     emit_steps: bool = True,
     progress_total: Optional[int] = None,
     progress_offset: int = 0,
+    model_failures: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all arena models.
@@ -136,7 +142,11 @@ async def stage1_collect_responses(
             model,
             [{"role": "user", "content": individual_prompt}],
         )
-        if resp is None:
+        if not is_usable_response(resp):
+            if model_failures is not None:
+                model_failures.append(
+                    failure_record(model, resp, stage="stage1", role="answer")
+                )
             return None
         result = apply_usage_fields(
             {
@@ -166,6 +176,7 @@ async def stage2_collect_rankings(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     arena_models: Optional[List[str]] = None,
+    model_failures: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -233,8 +244,8 @@ Now provide your evaluation and ranking:"""
     # Format results
     stage2_results = []
     for model, response in responses.items():
-        if response is not None:
-            full_text = response.get('content', '')
+        if is_usable_response(response):
+            full_text = response.get("content", "")
             parsed = parse_ranking_from_text(full_text)
             stage2_results.append(
                 apply_usage_fields(
@@ -246,6 +257,10 @@ Now provide your evaluation and ranking:"""
                     response,
                 )
             )
+        elif model_failures is not None:
+            model_failures.append(
+                failure_record(model, response, stage="stage2", role="rankings")
+            )
 
     return stage2_results, label_to_model
 
@@ -255,6 +270,7 @@ async def stage3_synthesize_final(
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
     chairman_model: str = CHAIRMAN_MODEL,
+    model_failures: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Stage 3: Chairman synthesizes final response.
@@ -302,11 +318,16 @@ Provide a clear, well-reasoned final answer that represents the arena's collecti
     # Query the chairman model
     response = await query_model(chairman_model, messages)
 
-    if response is None:
-        # Fallback if chairman fails
+    if not is_usable_response(response):
+        if model_failures is not None:
+            model_failures.append(
+                failure_record(
+                    chairman_model, response, stage="stage3", role="chair_final"
+                )
+            )
         return {
             "model": chairman_model,
-            "response": "Error: Unable to generate final synthesis."
+            "response": "Error: Unable to generate final synthesis.",
         }
 
     return apply_usage_fields(
@@ -492,6 +513,7 @@ async def run_full_arena(
                     "steps": steps,
                     "council_mode": is_council_mode(mode),
                     "cost": meta_out.get("cost"),
+                    "model_failures": meta_out.get("model_failures") or [],
                 },
             }
         )
@@ -515,6 +537,7 @@ async def run_mode_council(
 ):
     """Council mode: All models answer, peer review, chairman synthesizes."""
     models = arena_models or ARENA_MODELS
+    model_failures: List[Dict[str, Any]] = []
     total_steps = len(models) + 2  # stage1 per model + rankings + chair
     await emit_execution_start(
         progress_cb,
@@ -530,14 +553,17 @@ async def run_mode_council(
         context_tokens_map=context_tokens_map,
         progress_cb=progress_cb,
         progress_total=total_steps,
+        model_failures=model_failures,
     )
     if not stage1_results:
         return [], [], {
             "model": "error",
             "response": "All models failed to respond. Please try again."
-        }, {"mode": "council"}
+        }, {"mode": "council", "model_failures": model_failures}
 
-    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results, models)
+    stage2_results, label_to_model = await stage2_collect_rankings(
+        user_query, stage1_results, models, model_failures=model_failures
+    )
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
     rankings_step = {
@@ -561,6 +587,7 @@ async def run_mode_council(
         stage1_results,
         stage2_results,
         chairman_model=chairman_model,
+        model_failures=model_failures,
     )
     chair_step = dict(stage3_result, role="chair_final")
     await emit_step_complete(progress_cb, chair_step, total_steps, total_steps)
@@ -575,6 +602,7 @@ async def run_mode_council(
         "mode": "council",
         "steps": steps,
         "cost": summarize_turn_cost(steps),
+        "model_failures": model_failures,
     }
     return stage1_results, stage2_results, stage3_result, metadata
 
@@ -685,6 +713,7 @@ async def run_mode_fight(
     models = arena_models or ARENA_MODELS
     prompt_map = per_model_prompts or {}
     context_map = context_tokens_map or {}
+    model_failures: List[Dict[str, Any]] = []
     total_steps = len(models) * 3 + 1
     await emit_execution_start(
         progress_cb,
@@ -705,6 +734,7 @@ async def run_mode_fight(
         emit_steps=False,
         progress_total=total_steps,
         progress_offset=0,
+        model_failures=model_failures,
     )
     answers = [
         {
@@ -732,10 +762,16 @@ async def run_mode_fight(
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": critique_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
+        if not is_usable_response(resp):
+            model_failures.append(
+                failure_record(
+                    ans["model"], resp, stage="critique", role="critique"
+                )
+            )
         critique_step = apply_usage_fields(
             {
                 "model": ans["model"],
-                "response": resp.get("content", "") if resp else "",
+                "response": resp.get("content", "") if is_usable_response(resp) else "",
                 "role": "critique",
                 "prompt_preview": critique_prompt[:500],
                 "prompt_full": critique_prompt,
@@ -763,10 +799,16 @@ async def run_mode_fight(
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": defense_prompt}])
         elapsed_ms = int((time.time() - start) * 1000)
+        if not is_usable_response(resp):
+            model_failures.append(
+                failure_record(
+                    ans["model"], resp, stage="defense", role="defense"
+                )
+            )
         defense_step = apply_usage_fields(
             {
                 "model": ans["model"],
-                "response": resp.get("content", "") if resp else "",
+                "response": resp.get("content", "") if is_usable_response(resp) else "",
                 "role": "defense",
                 "prompt_full": defense_prompt,
                 "prompt_preview": defense_prompt[:500],
@@ -792,10 +834,18 @@ async def run_mode_fight(
     start = time.time()
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
+    if not is_usable_response(chair_resp):
+        model_failures.append(
+            failure_record(
+                chairman_model, chair_resp, stage="chair", role="chair_final"
+            )
+        )
     stage3_result = apply_usage_fields(
         {
             "model": chairman_model,
-            "response": chair_resp.get("content", "") if chair_resp else "No response from chairman.",
+            "response": chair_resp.get("content", "")
+            if is_usable_response(chair_resp)
+            else "No response from chairman.",
             "role": "chair_final",
             "prompt_full": chair_prompt,
             "prompt_preview": chair_prompt[:500],
@@ -808,7 +858,12 @@ async def run_mode_fight(
     await emit_step_complete(progress_cb, stage3_result, total_steps, total_steps)
 
     steps = answers + critiques + defenses + [stage3_result]
-    metadata = {"mode": "fight", "steps": steps, "cost": summarize_turn_cost(steps)}
+    metadata = {
+        "mode": "fight",
+        "steps": steps,
+        "cost": summarize_turn_cost(steps),
+        "model_failures": model_failures,
+    }
     return steps, [], stage3_result, metadata
 
 

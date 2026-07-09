@@ -1,8 +1,84 @@
 """OpenRouter API client for making LLM requests."""
 
+import logging
+from typing import Any, Dict, List, Optional
+
 import httpx
-from typing import List, Dict, Any, Optional
+
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
+
+logger = logging.getLogger(__name__)
+
+
+def is_query_failure(resp: Optional[Dict[str, Any]]) -> bool:
+    """True when query_model returned a structured failure payload."""
+    return bool(resp and resp.get("_failed"))
+
+
+def is_usable_response(resp: Optional[Dict[str, Any]]) -> bool:
+    """True when the response has usable model content."""
+    if not resp or is_query_failure(resp):
+        return False
+    content = resp.get("content")
+    return content is not None and str(content).strip() != ""
+
+
+def failure_record(
+    model: str,
+    resp: Optional[Dict[str, Any]],
+    *,
+    stage: str,
+    role: str,
+) -> Dict[str, Any]:
+    """Normalize a failed query into metadata.model_failures entry."""
+    if resp and is_query_failure(resp):
+        return {
+            "model": model,
+            "stage": stage,
+            "role": role,
+            "status": resp.get("error_status"),
+            "message": resp.get("error_message"),
+            "provider": resp.get("error_provider"),
+            "raw": resp.get("error_raw"),
+        }
+    return {
+        "model": model,
+        "stage": stage,
+        "role": role,
+        "status": None,
+        "message": "No response from model (timeout or unknown error)",
+        "provider": None,
+        "raw": None,
+    }
+
+
+def _parse_error_body(response: httpx.Response) -> Dict[str, Any]:
+    try:
+        data = response.json()
+    except Exception:
+        return {"message": response.text[:500], "code": response.status_code}
+
+    err = data.get("error") or data
+    meta = err.get("metadata") or {}
+    return {
+        "message": err.get("message") or str(err),
+        "code": err.get("code") or response.status_code,
+        "provider": meta.get("provider_name"),
+        "raw": (meta.get("raw") or response.text)[:500],
+    }
+
+
+def _failure_response(model: str, error: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "_failed": True,
+        "model": model,
+        "content": None,
+        "error_status": error.get("code"),
+        "error_message": error.get("message"),
+        "error_provider": error.get("provider"),
+        "error_raw": error.get("raw"),
+        "usage": {},
+    }
 
 
 async def query_model(
@@ -14,13 +90,9 @@ async def query_model(
     """
     Query a single model via OpenRouter API.
 
-    Args:
-        model: OpenRouter model identifier (e.g., "openai/gpt-4o")
-        messages: List of message dicts with 'role' and 'content'
-        timeout: Request timeout in seconds
-
     Returns:
-        Response dict with 'content' and optional 'reasoning_details', or None if failed
+        Success: dict with 'content', optional 'reasoning_details', 'usage'
+        Failure: dict with '_failed': True and error_* fields (never None)
     """
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -37,56 +109,61 @@ async def query_model(
             response = await client.post(
                 OPENROUTER_API_URL,
                 headers=headers,
-                json=payload
+                json=payload,
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                error = _parse_error_body(response)
+                if log_error:
+                    logger.warning(
+                        "OpenRouter error model=%s status=%s provider=%s msg=%s",
+                        model,
+                        error.get("code"),
+                        error.get("provider"),
+                        (error.get("message") or "")[:200],
+                    )
+                return _failure_response(model, error)
 
             data = response.json()
-            message = data['choices'][0]['message']
+            message = data["choices"][0]["message"]
 
             return {
-                'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details'),
-                'usage': data.get('usage') or {},
-                'model': data.get('model') or model,
+                "content": message.get("content"),
+                "reasoning_details": message.get("reasoning_details"),
+                "usage": data.get("usage") or {},
+                "model": data.get("model") or model,
             }
 
     except httpx.HTTPStatusError as e:
-        body = ""
-        try:
-            body = e.response.text
-        except Exception:
-            body = "<unavailable>"
+        error = _parse_error_body(e.response)
         if log_error:
-            print(f"[openrouter] model={model} status={e.response.status_code} body={body[:500]}")
-        return None
+            logger.warning(
+                "OpenRouter HTTP error model=%s status=%s msg=%s",
+                model,
+                error.get("code"),
+                (error.get("message") or "")[:200],
+            )
+        return _failure_response(model, error)
     except Exception as e:
         if log_error:
-            print(f"[openrouter] model={model} error={e}")
-        return None
+            logger.warning("OpenRouter request failed model=%s error=%s", model, e)
+        return _failure_response(
+            model,
+            {"code": None, "message": str(e), "provider": None, "raw": str(e)[:500]},
+        )
 
 
 async def query_models_parallel(
     models: List[str],
-    messages: List[Dict[str, str]]
+    messages: List[Dict[str, str]],
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     Query multiple models in parallel.
 
-    Args:
-        models: List of OpenRouter model identifiers
-        messages: List of message dicts to send to each model
-
     Returns:
-        Dict mapping model identifier to response dict (or None if failed)
+        Dict mapping model identifier to response dict (success or _failed)
     """
     import asyncio
 
-    # Create tasks for all models
     tasks = [query_model(model, messages) for model in models]
-
-    # Wait for all to complete
     responses = await asyncio.gather(*tasks)
-
-    # Map models to their responses
     return {model: response for model, response in zip(models, responses)}

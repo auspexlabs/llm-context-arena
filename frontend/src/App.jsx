@@ -169,12 +169,15 @@ function App() {
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
-              if (event.data?.steps || event.data?.cost) {
+              if (event.data?.steps || event.data?.cost || event.data?.model_failures) {
                 lastMsg.metadata = {
                   ...(lastMsg.metadata || {}),
                   ...(event.data?.steps ? { steps: event.data.steps } : {}),
                   mode: event.data.mode ?? lastMsg.metadata?.mode,
                   ...(event.data?.cost ? { cost: event.data.cost } : {}),
+                  ...(event.data?.model_failures
+                    ? { model_failures: event.data.model_failures }
+                    : {}),
                 };
               }
               return { ...prev, messages };
@@ -296,7 +299,13 @@ function App() {
             break;
 
           case 'complete':
-            // Stream complete, reload conversations list
+            // Stream complete — drop live steps; persisted metadata.steps is canonical
+            if (currentConversationId) {
+              setLiveStepsByConversation((prev) => ({
+                ...prev,
+                [currentConversationId]: [],
+              }));
+            }
             loadConversations();
             setIsLoading(false);
             break;

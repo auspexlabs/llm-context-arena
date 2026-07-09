@@ -267,6 +267,11 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **decision:** Per-step `step_complete` SSE + `normalize_arena_results()` (advanced modes: empty `stage1`, full `metadata.steps`). Unified `step_index`/`step_total` progress. UI: council → Stage1/2/3; advanced → RoundTrack timeline only. Register `baseline` → council runner.
 - **impact:** Unblocks honest execution contract for PIV-001 agent step API.
 
+### DEC-016: Surface OpenRouter model failures in arena metadata
+- **date:** 2026-07-09 · **status:** accepted · **triggered_by:** fight dogfood showed 4/5 free models silently dropped; probe revealed 429 rate limits + 404 privacy guardrails · **docs_updated:** `backend/openrouter.py`, `backend/arena.py`, `backend/routes/execution.py`, `frontend/src/components/ChatInterface.jsx`, `mcp_arena/` · **related:** `DEC-015`, `PIV-001`
+- **decision:** `query_model` returns structured `_failed` payloads (status, message, provider) instead of `None`. Arena accumulates `metadata.model_failures[]` per stage. Opt-in `GET .../messages/{i}/execution?include=...` for history; MCP `get_message_execution` + `ensure_indexed`. UI shows failure panel; live timeline clears on stream complete (metadata.steps canonical).
+- **impact:** Agents and UI see why panels collapse (rate limit vs privacy policy vs timeout).
+
 ### DEC-015: Agent control plane Phase 0/1 — run_turn, council turn API, MCP server
 - **date:** 2026-07-08 · **status:** accepted · **triggered_by:** PIV-001 execution; user request to build MCP + agent API (not scaffold-only) · **docs_updated:** `docs/agent-control-plane-architecture.md`, `docs/piv-001-checklist.md`, `backend/run_turn.py`, `backend/turn_service.py`, `backend/turn_store.py`, `backend/routes/turns.py`, `mcp_arena/` · **related:** `PIV-001`, `DEC-014`
 - **decision:** Extract `run_turn()` as the single full-turn path (sync + stream). Add council-only turn sidecar (`TurnRecord` + `TurnStore`) with `POST/GET/DELETE turns` and `advance` step API. Ship `mcp_arena` MCP server (stdio) as httpx wrapper — no duplicated arena logic. MCP `run_council_turn` convenience chains create + 3× advance.

@@ -1117,6 +1117,30 @@
   font-size: 14px;
 }
 
+.model-failures-panel {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #8b5a2b;
+  background: #2a1f14;
+  color: #f5e6d3;
+  font-size: 0.85rem;
+}
+
+.model-failures-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.model-failures-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.model-failures-list li {
+  margin-bottom: 4px;
+}
+
 .context-panel {
   margin-top: 10px;
   padding: 10px;

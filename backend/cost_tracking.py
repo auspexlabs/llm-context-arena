@@ -16,7 +16,7 @@ def empty_usage_fields() -> Dict[str, Any]:
 
 def usage_fields_from_response(resp: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Flatten OpenRouter usage from a query_model response."""
-    if not resp:
+    if not resp or resp.get("_failed"):
         return empty_usage_fields()
     usage = resp.get("usage") or {}
     prompt = int(usage.get("prompt_tokens") or 0)

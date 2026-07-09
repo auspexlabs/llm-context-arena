@@ -178,6 +178,31 @@ async def get_settings() -> str:
 
 
 @mcp.tool()
+async def ensure_indexed(
+    conversation_id: str,
+    repo_root: Optional[str] = None,
+) -> str:
+    """Reindex conversation from git when stale; safe to call before deliberation."""
+    return _json(
+        await _get_client().ensure_indexed(conversation_id, repo_root=repo_root)
+    )
+
+
+@mcp.tool()
+async def get_message_execution(
+    conversation_id: str,
+    message_index: int,
+    include: str = "failures,prompts,cost,context,steps",
+) -> str:
+    """Opt-in execution detail for a stored assistant message (history by index)."""
+    return _json(
+        await _get_client().get_message_execution(
+            conversation_id, message_index, include=include
+        )
+    )
+
+
+@mcp.tool()
 async def update_settings(
     arena_models: Optional[List[str]] = None,
     chairman_model: Optional[str] = None,

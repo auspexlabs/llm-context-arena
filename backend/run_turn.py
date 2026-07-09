@@ -106,6 +106,7 @@ def _assistant_metadata(
         "steps": metadata.get("steps"),
         "cost": metadata.get("cost"),
         "context_from_last_chair": ctx.context_from_last_chair,
+        "model_failures": metadata.get("model_failures") or [],
     }
 
 

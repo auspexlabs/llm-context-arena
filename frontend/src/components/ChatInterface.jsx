@@ -1010,6 +1010,25 @@ export default function ChatInterface({
                   )}
                   {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
 
+                  {(msg.metadata?.model_failures?.length > 0) && (
+                    <div className="model-failures-panel">
+                      <div className="model-failures-title">
+                        Model failures ({msg.metadata.model_failures.length})
+                      </div>
+                      <ul className="model-failures-list">
+                        {msg.metadata.model_failures.map((f, i) => (
+                          <li key={`${f.model}-${f.stage}-${i}`}>
+                            <strong>{(f.model || '').split('/').pop()}</strong>
+                            {' '}
+                            [{f.stage}/{f.role}]
+                            {f.status ? ` HTTP ${f.status}` : ''}
+                            {f.message ? ` — ${f.message}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   <TurnCostLine message={msg} />
 
                   <ContextPanel sources={msg.contextSources || msg.context_sources} />

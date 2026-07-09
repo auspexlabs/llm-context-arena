@@ -190,3 +190,29 @@ class ArenaClient:
 
     async def update_settings(self, **fields: Any) -> Dict[str, Any]:
         return await self._request("POST", "/api/settings", json=fields)
+
+    async def ensure_indexed(
+        self,
+        conversation_id: str,
+        repo_root: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Reindex when manifest reports drift; no-op when fresh."""
+        manifest = await self.get_index_manifest(conversation_id, repo_root)
+        delta = manifest.get("changed_since_index") or {}
+        if delta.get("needs_reindex") or not manifest.get("has_index", True):
+            reindex = await self.reindex_git(conversation_id, repo_root=repo_root)
+            manifest = await self.get_index_manifest(conversation_id, repo_root)
+            return {"reindexed": True, "reindex": reindex, "manifest": manifest}
+        return {"reindexed": False, "manifest": manifest}
+
+    async def get_message_execution(
+        self,
+        conversation_id: str,
+        message_index: int,
+        include: str = "failures,prompts,cost,context,steps",
+    ) -> Dict[str, Any]:
+        return await self._request(
+            "GET",
+            f"/api/conversations/{conversation_id}/messages/{message_index}/execution",
+            params={"include": include},
+        )
