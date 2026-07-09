@@ -267,6 +267,11 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **decision:** Per-step `step_complete` SSE + `normalize_arena_results()` (advanced modes: empty `stage1`, full `metadata.steps`). Unified `step_index`/`step_total` progress. UI: council → Stage1/2/3; advanced → RoundTrack timeline only. Register `baseline` → council runner.
 - **impact:** Unblocks honest execution contract for PIV-001 agent step API.
 
+### DEC-015: Agent control plane Phase 0/1 — run_turn, council turn API, MCP server
+- **date:** 2026-07-08 · **status:** accepted · **triggered_by:** PIV-001 execution; user request to build MCP + agent API (not scaffold-only) · **docs_updated:** `docs/agent-control-plane-architecture.md`, `docs/piv-001-checklist.md`, `backend/run_turn.py`, `backend/turn_service.py`, `backend/turn_store.py`, `backend/routes/turns.py`, `mcp_arena/` · **related:** `PIV-001`, `DEC-014`
+- **decision:** Extract `run_turn()` as the single full-turn path (sync + stream). Add council-only turn sidecar (`TurnRecord` + `TurnStore`) with `POST/GET/DELETE turns` and `advance` step API. Ship `mcp_arena` MCP server (stdio) as httpx wrapper — no duplicated arena logic. MCP `run_council_turn` convenience chains create + 3× advance.
+- **defers:** `await_user`/resume (Phase 2), non-council step checkpoints, `prepare_context` standalone tool, agent SDK package.
+
 ### PIV-001: Agent control plane — agents drive, UI observes, humans await
 - **date:** 2026-07-07 · **status:** accepted · **triggered_by:** product direction review; agent-orchestration vision for multi-model deliberation + CodeRAG · **docs_updated:** `docs/decision_log.md`, `docs/piv-001-agent-control-plane.md`, `docs/piv-001-checklist.md` · **related:** `DEC-001`, `DEC-007`, `DEC-010`, `DEC-011`, `DEC-013`, `DEF-003`, `DEF-004` · **doc:** [`docs/piv-001-agent-control-plane.md`](piv-001-agent-control-plane.md)
 - **pivot:** Arena becomes an **agent control plane** (turn/step/resume APIs, structured `ArenaExecution`, index tools). UI becomes an **observatory**; humans enter via **`await_user`** checkpoints, not as default operator every turn. Disagreement (stage 1 + stage 2 rankings) stays first-class signal for drivers.

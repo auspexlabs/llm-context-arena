@@ -75,7 +75,12 @@ _COLBERT_DEVICE_RESOLVED: Optional[str] = None
 
 
 def _cuda_usable_for_colbert() -> bool:
-    """True only if torch can allocate on CUDA (catches missing libcudnn, etc.)."""
+    """True only if torch can allocate on CUDA (catches broken pip NVIDIA wheels)."""
+    from .cuda_bootstrap import ensure_nvidia_cuda_libs
+
+    if not ensure_nvidia_cuda_libs():
+        return False
+
     try:
         import torch
 
@@ -84,7 +89,12 @@ def _cuda_usable_for_colbert() -> bool:
         torch.zeros(1, device="cuda")
         return True
     except Exception as exc:
-        logger.warning("CUDA probe failed (%s); ColBERT will use CPU", exc)
+        logger.warning(
+            "CUDA probe failed (%s); ColBERT will use CPU. "
+            "If the GPU is present, repair torch CUDA wheels with: "
+            "uv sync --reinstall-package torch",
+            exc,
+        )
         return False
 
 

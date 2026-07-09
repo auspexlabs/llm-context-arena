@@ -24,6 +24,8 @@ from .config import (
     CHAIRMAN_MODEL,
     INDEX_INCLUDE_UNTRACKED,
 )
+from .run_turn import run_turn
+from .routes.turns import router as turns_router
 from .dependencies import (
     get_context_engine,
     get_settings,
@@ -47,6 +49,7 @@ from .rag_lmstudio import (
 
 app = FastAPI(title="LLM Context Arena API")
 logger = logging.getLogger(__name__)
+app.include_router(turns_router)
 
 # Enable CORS for local development
 app.add_middleware(
@@ -173,106 +176,23 @@ async def send_message(
     Send a message and run the arena deliberation process.
     Returns the complete response with all stages.
     """
-    # Check if conversation exists
-    conversation = storage_svc.get_conversation(conversation_id)
-    if conversation is None:
+    if storage_svc.get_conversation(conversation_id) is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    arena_models = settings.get("arena_models", ARENA_MODELS)
-    chairman_model = settings.get("chairman_model", CHAIRMAN_MODEL)
 
-    # Check if this is the first message
-    is_first_message = len(conversation["messages"]) == 0
+    try:
+        result = await run_turn(
+            conversation_id=conversation_id,
+            content=request.content,
+            storage_svc=storage_svc,
+            settings=settings,
+            manual_context=request.manual_context,
+            progress_cb=None,
+            persist=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    user_content_raw = request.content
-    ctx = await get_context_engine().prepare_context(
-        conversation_id=conversation_id,
-        user_input=user_content_raw,
-        mode=conversation.get("mode", "council"),
-        manual_context=request.manual_context,
-        conversation=conversation,
-        arena_models=arena_models,
-        chairman_model=chairman_model,
-    )
-
-    if ctx.directives.reset:
-        reset_conversation(conversation_id)
-        return {
-            "stage1": [],
-            "stage2": [],
-            "stage3": {"model": "system", "response": "Conversation reset as requested."},
-            "metadata": {"directives": ctx.directives.dict(), "warnings": ctx.warnings},
-            "context_sources": [],
-            "directives": ctx.directives.dict(),
-            "warnings": ctx.warnings,
-        }
-
-    user_content = ctx.clean_query
-    directives = ctx.directives
-    context_block = ctx.context_block
-    context_sources = ctx.context_sources
-    context_from_last_chair = ctx.context_from_last_chair
-    augmented_content = ctx.base_prompt
-    per_model_prompts = ctx.per_model_prompts
-    context_token_map = ctx.context_token_map
-
-    # Add user message (store original text, not augmented)
-    storage_svc.add_user_message(conversation_id, user_content)
-
-    # If this is the first message, generate a title (from original question)
-    if is_first_message:
-        title = await generate_conversation_title(user_content)
-        storage_svc.update_conversation_title(conversation_id, title)
-
-    context_tokens = get_rag_provider_dep().estimate_tokens(context_block) if context_block else 0
-
-    # Run the arena process on the augmented content
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_arena(
-        augmented_content,
-        per_model_prompts if per_model_prompts else None,
-        mode=conversation.get("mode", "council"),
-        arena_models=arena_models,
-        chairman_model=chairman_model,
-        iterations=directives.iterations_override,
-        context_tokens=context_tokens,
-        context_tokens_map=context_token_map,
-        progress_cb=None,
-    )
-    metadata["directives"] = directives.dict()
-    metadata["warnings"] = directives.warnings
-    metadata["mode"] = conversation.get("mode", "council")
-    metadata["context_from_last_chair"] = context_from_last_chair
-
-    # Add assistant message with all stages
-    storage_svc.add_assistant_message(
-        conversation_id,
-        stage1_results,
-        stage2_results,
-        stage3_result,
-        context_sources,
-        metadata={
-            "label_to_model": metadata.get("label_to_model"),
-            "aggregate_rankings": metadata.get("aggregate_rankings"),
-            "directives": directives.dict(),
-            "warnings": directives.warnings,
-            "mode": conversation.get("mode", "council"),
-            "chairman_model": chairman_model,
-            "arena_models": arena_models,
-            "steps": metadata.get("steps"),
-            "cost": metadata.get("cost"),
-            "context_from_last_chair": context_from_last_chair,
-        },
-    )
-
-    # Return the complete response with metadata
-    return {
-        "stage1": stage1_results,
-        "stage2": stage2_results,
-        "stage3": stage3_result,
-        "metadata": metadata,
-        "context_sources": context_sources,
-        "directives": directives.dict(),
-        "warnings": directives.warnings,
-    }
+    return result.response_dict
 
 
 @app.post("/api/conversations/{conversation_id}/message/stream")
@@ -285,30 +205,25 @@ async def send_message_stream(
     Send a message and stream the arena deliberation process.
     Returns Server-Sent Events as each stage completes.
     """
-    # Check if conversation exists
     conversation = storage_svc.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
 
     async def event_generator():
         try:
-            user_content_raw = request.content
-
             settings_local = load_runtime_settings()
-            arena_models_local = settings_local.get("arena_models", ARENA_MODELS)
-            chairman_model_local = settings_local.get("chairman_model", CHAIRMAN_MODEL)
 
+            # Prepare context for early SSE (rag_context / summarization) before arena run
             ctx = await get_context_engine().prepare_context(
                 conversation_id=conversation_id,
-                user_input=user_content_raw,
+                user_input=request.content,
                 mode=conversation.get("mode", "council"),
                 manual_context=request.manual_context,
                 conversation=conversation,
-                arena_models=arena_models_local,
-                chairman_model=chairman_model_local,
+                arena_models=settings_local.get("arena_models", ARENA_MODELS),
+                chairman_model=settings_local.get("chairman_model", CHAIRMAN_MODEL),
             )
 
             if ctx.directives.reset:
@@ -317,34 +232,11 @@ async def send_message_stream(
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
                 return
 
-            user_content = ctx.clean_query
-            directives = ctx.directives
-            context_block = ctx.context_block
-            context_sources = ctx.context_sources
-            context_from_last_chair = ctx.context_from_last_chair
-            augmented_content = ctx.base_prompt
-            per_model_prompts = ctx.per_model_prompts
-            context_token_map = ctx.context_token_map
-            summarize_targets = ctx.summarize_targets
+            if ctx.context_sources:
+                yield "data: " + json.dumps({"type": "rag_context", "data": ctx.context_sources}) + "\n\n"
+            if ctx.summarize_targets:
+                yield "data: " + json.dumps({"type": "summarization", "data": {"models": list(ctx.summarize_targets.keys()), "targets": ctx.summarize_targets}}) + "\n\n"
 
-            # Emit context info early so the UI can display it
-            if context_sources:
-                yield "data: " + json.dumps({"type": "rag_context", "data": context_sources}) + "\n\n"
-            # Emit summarization info if any model was budgeted
-            if summarize_targets:
-                yield "data: " + json.dumps({"type": "summarization", "data": {"models": list(summarize_targets.keys()), "targets": summarize_targets}}) + "\n\n"
-
-            # Add user message (store original)
-            storage_svc.add_user_message(conversation_id, user_content)
-
-            # Start title generation in parallel (use original content)
-            title_task = None
-            if is_first_message:
-                title_task = asyncio.create_task(
-                    generate_conversation_title(user_content)
-                )
-
-            # Unified mode runner (returns stage1/2/3 + metadata)
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
 
             progress_events: asyncio.Queue = asyncio.Queue()
@@ -352,26 +244,23 @@ async def send_message_stream(
             async def _progress_cb(payload: Dict[str, Any]):
                 await progress_events.put(payload)
 
+            storage_svc.add_user_message(conversation_id, ctx.clean_query)
+
             runner_task = asyncio.create_task(
-                run_full_arena(
-                    augmented_content,
-                    per_model_prompts if per_model_prompts else None,
-                    mode=conversation.get("mode", "council"),
-                    arena_models=arena_models_local,
-                    chairman_model=chairman_model_local,
-                    iterations=directives.iterations_override,
-                    context_tokens=get_rag_provider_dep().estimate_tokens(context_block) if context_block else 0,
-                    context_tokens_map=context_token_map,
+                run_turn(
+                    conversation_id=conversation_id,
+                    content=request.content,
+                    storage_svc=storage_svc,
+                    settings=settings_local,
+                    manual_context=request.manual_context,
                     progress_cb=_progress_cb,
+                    persist_user=False,
+                    persist_assistant=False,
+                    prepared_ctx=ctx,
+                    schedule_title=is_first_message,
                 )
             )
 
-            stage1_results = []
-            stage2_results = []
-            stage3_result = {}
-            mode_metadata: Dict[str, Any] = {}
-
-            # Stream progress events while the runner executes
             while True:
                 if runner_task.done():
                     break
@@ -381,12 +270,17 @@ async def send_message_stream(
                 except asyncio.QueueEmpty:
                     await asyncio.sleep(0.01)
 
-            # Drain any remaining progress events after completion
             while not progress_events.empty():
                 payload = await progress_events.get()
                 yield "data: " + json.dumps(payload) + "\n\n"
 
-            stage1_results, stage2_results, stage3_result, mode_metadata = await runner_task
+            turn_result = await runner_task
+            response = turn_result.response_dict
+            stage1_results = response.get("stage1", [])
+            stage2_results = response.get("stage2", [])
+            stage3_result = response.get("stage3", {})
+            mode_metadata = response.get("metadata", {})
+            context_sources = turn_result.context_sources
 
             yield (
                 "data: "
@@ -399,9 +293,7 @@ async def send_message_stream(
                             "mode": mode_metadata.get("mode")
                             or conversation.get("mode", "council"),
                             "label_to_model": mode_metadata.get("label_to_model"),
-                            "aggregate_rankings": mode_metadata.get(
-                                "aggregate_rankings"
-                            ),
+                            "aggregate_rankings": mode_metadata.get("aggregate_rankings"),
                             "cost": mode_metadata.get("cost"),
                         },
                     }
@@ -418,78 +310,47 @@ async def send_message_stream(
                     [],
                     {"model": "system", "response": err_msg},
                     context_sources,
-                    metadata={
-                        "directives": directives.dict(),
-                        "warnings": directives.warnings,
-                        "mode": conversation.get("mode", "council"),
-                    },
+                    metadata={"mode": conversation.get("mode", "council")},
                 )
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
                 return
 
             if stage2_results:
                 yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-                stage_metadata = {
-                    "label_to_model": mode_metadata.get("label_to_model"),
-                    "aggregate_rankings": mode_metadata.get("aggregate_rankings"),
-                    "steps": mode_metadata.get("steps"),
-                    "directives": directives.dict(),
-                    "warnings": directives.warnings,
-                    "mode": mode_metadata.get("mode")
-                    or conversation.get("mode", "council"),
-                    "chairman_model": chairman_model_local,
-                    "arena_models": arena_models_local,
-                    "context_from_last_chair": context_from_last_chair,
-                }
                 yield (
                     "data: "
                     + json.dumps(
                         {
                             "type": "stage2_complete",
                             "data": stage2_results,
-                            "metadata": stage_metadata,
+                            "metadata": mode_metadata,
                         }
                     )
                     + "\n\n"
-            )
+                )
 
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
 
-            # Wait for title generation if it was started
+            title_task = turn_result.title_task
             if title_task:
                 title = await title_task
                 storage_svc.update_conversation_title(conversation_id, title)
                 yield (
                     "data: "
-                    + json.dumps(
-                        {"type": "title_complete", "data": {"title": title}}
-                    )
+                    + json.dumps({"type": "title_complete", "data": {"title": title}})
                     + "\n\n"
                 )
 
-            # Save complete assistant message
             storage_svc.add_assistant_message(
                 conversation_id,
                 stage1_results,
                 stage2_results,
                 stage3_result,
                 context_sources,
-                metadata={
-                    "label_to_model": mode_metadata.get("label_to_model"),
-                    "aggregate_rankings": mode_metadata.get("aggregate_rankings"),
-                    "directives": directives.dict(),
-                    "warnings": directives.warnings,
-                    "mode": conversation.get("mode", "council"),
-                    "chairman_model": chairman_model_local,
-                    "arena_models": arena_models_local,
-                    "steps": mode_metadata.get("steps"),
-                    "cost": mode_metadata.get("cost"),
-                    "context_from_last_chair": context_from_last_chair,
-                },
+                metadata=mode_metadata,
             )
 
-            # Send completion event
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
         except Exception as e:

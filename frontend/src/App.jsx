@@ -25,11 +25,18 @@ function App() {
     });
   };
 
-  const pushLiveStep = (step) => {
+  const pushLiveStep = (step, stepIndex) => {
     if (!currentConversationId || !step) return;
     setLiveStepsByConversation((prev) => {
       const existing = prev[currentConversationId] || [];
-      const next = [...existing, { ...step, __idx: existing.length }];
+      const dedupeKey = `${step.role || ''}|${step.model || ''}|${stepIndex ?? existing.length}`;
+      if (existing.some((s) => s.__dedupe === dedupeKey)) {
+        return prev;
+      }
+      const next = [
+        ...existing,
+        { ...step, __idx: existing.length, __dedupe: dedupeKey },
+      ];
       return { ...prev, [currentConversationId]: next };
     });
   };
@@ -186,7 +193,10 @@ function App() {
             break;
           case 'step_complete':
             if (event.data?.step) {
-              pushLiveStep(event.data.step);
+              pushLiveStep(
+                event.data.step,
+                event.data.step_index ?? event.data.completed ?? event.data.current
+              );
             }
             if (event.data) {
               const completed = event.data.step_index ?? event.data.completed ?? event.data.current ?? 0;
@@ -209,9 +219,6 @@ function App() {
                 activeModel: event.data.active_model ?? event.data.model ?? prev.activeModel ?? null,
                 state: event.data.state ?? prev.state,
               }));
-              if (event.data.step) {
-                pushLiveStep(event.data.step);
-              }
               if (event.data.state === 'finish') {
                 pushBreadcrumb({
                   label: event.data.label || 'step',

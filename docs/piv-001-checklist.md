@@ -30,33 +30,33 @@ See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). **Remediated
 - [ ] Deduplicate directive parsing: remove `ChatInterface.parseDirectives()` divergence from `backend/directives.py`
 
 ### Agent-adjacent plumbing
-- [ ] Extract shared `run_turn()` from `send_message()` + `send_message_stream()` (`backend/main.py`)
-- [ ] Use `ArenaExecution.to_response_dict()` (`backend/models.py`) for sync + stream final payloads
+- [x] Extract shared `run_turn()` from `send_message()` + `send_message_stream()` (`backend/run_turn.py`)
+- [x] Use `ArenaExecution.to_response_dict()` (`backend/models.py`) for sync + stream final payloads
 - [ ] Wire `@temp` / `@maxtokens` from `ParsedDirectives` → `query_model()` (`openrouter.py`)
 - [ ] Attach `@trace` payload to assistant metadata (context_sources, router category, fusion flags)
 - [ ] Emit per-model progress in `stage2_collect_rankings()` (`arena.py`)
-- [ ] Document Phase 0 tools in OpenAPI comments: manifest, reindex, repo_tree, file, search, settings
+- [x] Document Phase 0 tools — see [`agent-control-plane-architecture.md`](agent-control-plane-architecture.md)
 
 ---
 
 ## Phase 1 — Turn state + step API (council first)
 
 ### Data model
-- [ ] Turn record: `turn_id`, `status`, `step_index`, `mode`, `agent_id`, `await_reason`, `await_prompt`
-- [ ] Persist partial steps to conversation / turn sidecar (crash-safe)
-- [ ] Serializable checkpoint for `run_mode_council()` (label map, stage outputs)
+- [x] Turn record: `turn_id`, `status`, `step_index`, `mode`, `agent_id`, `await_reason`, `await_prompt` (`backend/models.py`)
+- [x] Persist partial steps to turn sidecar (`backend/turn_store.py`)
+- [x] Serializable checkpoint for council stages (`TurnCheckpoint`)
 
 ### API
-- [ ] `POST /api/conversations/{id}/turns` — agent-initiated turn
-- [ ] `POST /api/conversations/{id}/turns/{turn_id}/advance` — single step
-- [ ] `GET /api/conversations/{id}/turns/{turn_id}` — poll state
-- [ ] `DELETE /api/conversations/{id}/turns/{turn_id}` — cancel
+- [x] `POST /api/conversations/{id}/turns` — agent-initiated turn
+- [x] `POST /api/conversations/{id}/turns/{turn_id}/advance` — single step (council)
+- [x] `GET /api/conversations/{id}/turns/{turn_id}` — poll state
+- [x] `DELETE /api/conversations/{id}/turns/{turn_id}` — cancel
 
 ### Agent tools (wrap existing + new)
-- [ ] `prepare_context` → `ContextEngine.prepare_context()`
-- [ ] `get_index_manifest` / `reindex` / `reindex_git`
-- [ ] `get_repo_tree` / `get_file` / `search_repo` / `resolve_path`
-- [ ] `get_settings` / `update_settings`
+- [ ] `prepare_context` → standalone MCP tool (context prep is implicit in create_turn today)
+- [x] `get_index_manifest` / `reindex` / `reindex_git` (MCP)
+- [x] `get_repo_tree` / `get_file` / `search_repo` / `resolve_path` (MCP)
+- [x] `get_settings` / `update_settings` (MCP)
 
 ---
 

@@ -245,3 +245,81 @@ class Conversation(BaseModel):
 
     class Config:
         extra = "allow"
+
+
+# ----- Agent turn state (PIV-001 Phase 1) -----
+
+
+class TurnStatus(str, Enum):
+    """Lifecycle for agent-driven turns."""
+
+    PENDING = "pending"
+    STAGE1_COMPLETE = "stage1_complete"
+    STAGE2_COMPLETE = "stage2_complete"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    AWAIT_USER = "await_user"
+
+
+class TurnCheckpoint(BaseModel):
+    """Serializable council checkpoint between advance calls."""
+
+    augmented_content: str
+    per_model_prompts: Dict[str, str] = Field(default_factory=dict)
+    context_token_map: Dict[str, int] = Field(default_factory=dict)
+    context_block: str = ""
+    context_sources: List[Dict[str, Any]] = Field(default_factory=list)
+    directives: Dict[str, Any] = Field(default_factory=dict)
+    warnings: List[str] = Field(default_factory=list)
+    arena_models: List[str] = Field(default_factory=list)
+    chairman_model: str = ""
+    context_from_last_chair: bool = False
+    iterations_override: Optional[int] = None
+
+
+class TurnRecord(BaseModel):
+    """Agent turn with step checkpoints (council first)."""
+
+    turn_id: str
+    conversation_id: str
+    status: TurnStatus = TurnStatus.PENDING
+    step_index: int = 0
+    step_total: int = 3
+    mode: str = "council"
+    agent_id: Optional[str] = None
+    user_query: str = ""
+    user_query_raw: str = ""
+    checkpoint: TurnCheckpoint
+    stage1: List[Dict[str, Any]] = Field(default_factory=list)
+    stage2: List[Dict[str, Any]] = Field(default_factory=list)
+    stage3: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+    await_reason: Optional[str] = None
+    await_prompt: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    def to_api_dict(self) -> Dict[str, Any]:
+        """API-facing turn snapshot."""
+        payload = self.model_dump(mode="json")
+        payload["next_step"] = self.next_step_name()
+        payload["execution"] = None
+        if self.status == TurnStatus.COMPLETE:
+            payload["execution"] = {
+                "stage1": self.stage1,
+                "stage2": self.stage2,
+                "stage3": self.stage3,
+                "metadata": self.metadata,
+                "context_sources": self.checkpoint.context_sources,
+            }
+        return payload
+
+    def next_step_name(self) -> Optional[str]:
+        if self.status in {TurnStatus.COMPLETE, TurnStatus.CANCELLED, TurnStatus.FAILED}:
+            return None
+        if self.status == TurnStatus.AWAIT_USER:
+            return "resume"
+        mapping = {0: "stage1", 1: "stage2", 2: "stage3"}
+        return mapping.get(self.step_index)
