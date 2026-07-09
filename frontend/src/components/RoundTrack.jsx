@@ -19,6 +19,7 @@ const sanitizePrompt = (prompt = '') => {
 
 const normalizeRole = (role = '') => {
   const r = String(role || '').toLowerCase();
+  if (r.startsWith('draft_p')) return 'draft';
   // Strip common suffixes like _p1_t2
   return r.replace(/_p\d+_t\d+$/, '');
 };
@@ -32,7 +33,7 @@ const labelForStep = (mode, role, model) => {
     case 'answer':
     case 'stacks_answer':
     case 'draft':
-      return { from: shortModel, to: 'User' };
+      return { from: shortModel, to: 'Shared draft' };
     case 'critique':
     case 'stacks_critique':
       return { from: shortModel, to: 'Peers' };
@@ -69,17 +70,23 @@ const preview = (text = '', limit = 200) => {
 };
 
 const makeRoundStep = (mode, step) => {
+  const isDraft = String(step.role || '').startsWith('draft_');
   const safePrompt = step.prompt_preview || step.promptPreview || step.prompt_full || step.promptFull || '';
   const safeResponse = step.response || '';
   const { from, to } = labelForStep(mode, step.role, step.model);
+  const responsePreview = isDraft && step.prior_draft != null
+    ? `Prior: ${preview(step.prior_draft, 120)} → ${preview(safeResponse, 160)}`
+    : isDraft && step.had_prior_draft === false
+      ? `(no prior) → ${preview(safeResponse, 200)}`
+      : sanitizePrompt(safeResponse);
   return {
     id: step.id || `${step.role || 'step'}-${step.model || 'model'}-${Math.random().toString(36).slice(2, 8)}`,
     role: step.role,
     model: step.model,
     fromLabel: from,
     toLabel: to,
-    promptPreview: sanitizePrompt(safePrompt),
-    responsePreview: sanitizePrompt(safeResponse),
+    promptPreview: isDraft ? (step.prompt_preview || safePrompt) : sanitizePrompt(safePrompt),
+    responsePreview,
     raw: step,
   };
 };

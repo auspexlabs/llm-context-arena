@@ -620,6 +620,7 @@ async def run_mode_round_robin(
     """Round Robin mode: Sequential refinement by each model."""
     models = arena_models or ARENA_MODELS
     context_map = context_tokens_map or {}
+    model_failures: List[Dict[str, Any]] = []
     drafts: List[Dict[str, Any]] = []
     prior_text = ""
     passes = iterations or 1
@@ -635,23 +636,48 @@ async def run_mode_round_robin(
     for iteration in range(1, passes + 1):
         for turn, model in enumerate(models, start=1):
             base_prompt = per_model_prompts.get(model, user_query) if per_model_prompts else user_query
+            had_prior = bool(prior_text and prior_text.strip())
+            prior_for_prompt = prior_text if had_prior else "(none yet)"
             turn_prompt = (
                 f"Round Robin pass {iteration}/{passes}, turn {turn}/{len(models)}. "
                 f"You see the latest draft below. Improve accuracy and clarity; keep useful detail. "
-                f"Original question: {user_query}\n\nLatest draft:\n{prior_text or '(none yet)'}"
+                f"Do not ignore the prior draft when one is provided.\n\n"
+                f"Original question: {user_query}\n\nLatest draft:\n{prior_for_prompt}"
             )
             full_prompt = f"{base_prompt}\n\n{turn_prompt}"
             start = time.time()
             resp = await query_model(model, [{"role": "user", "content": full_prompt}])
             elapsed_ms = int((time.time() - start) * 1000)
-            text = resp.get("content", "") if resp else ""
             ctx_tokens = context_map.get(model, context_map.get("__base__", context_tokens))
+            if not is_usable_response(resp):
+                model_failures.append(
+                    failure_record(
+                        model,
+                        resp,
+                        stage=f"draft_p{iteration}_t{turn}",
+                        role=f"draft_p{iteration}_t{turn}",
+                    )
+                )
+            text = resp.get("content", "") if is_usable_response(resp) else ""
+            prior_snip = (
+                (prior_text[:240] + "…")
+                if prior_text and len(prior_text) > 240
+                else (prior_text or "(none yet)")
+            )
             draft_step = apply_usage_fields(
                 {
                     "model": model,
                     "response": text,
                     "role": f"draft_p{iteration}_t{turn}",
-                    "prompt_preview": full_prompt[:500],
+                    "iteration": iteration,
+                    "turn": turn,
+                    "had_prior_draft": had_prior,
+                    "prior_draft": prior_text if had_prior else None,
+                    "turn_instruction": turn_prompt,
+                    "prompt_preview": (
+                        f"Pass {iteration}/{passes} turn {turn}/{len(models)} · "
+                        f"Prior draft: {prior_snip}"
+                    ),
                     "prompt_full": full_prompt,
                     "est_tokens": max(len(full_prompt) // 4, 1),
                     "context_tokens": ctx_tokens,
@@ -660,7 +686,8 @@ async def run_mode_round_robin(
                 resp,
             )
             drafts.append(draft_step)
-            prior_text = text or prior_text
+            if text.strip():
+                prior_text = text
             step_idx += 1
             await emit_step_complete(progress_cb, draft_step, step_idx, total_steps)
 
@@ -674,12 +701,22 @@ async def run_mode_round_robin(
     start = time.time()
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])
     elapsed_ms = int((time.time() - start) * 1000)
+    if not is_usable_response(chair_resp):
+        model_failures.append(
+            failure_record(
+                chairman_model, chair_resp, stage="chair", role="chair_final"
+            )
+        )
     stage3_result = apply_usage_fields(
         {
             "model": chairman_model,
-            "response": chair_resp.get("content", "") if chair_resp else "No response from chairman.",
+            "response": chair_resp.get("content", "")
+            if is_usable_response(chair_resp)
+            else "No response from chairman.",
             "role": "chair_final",
-            "prompt_preview": chair_prompt[:500],
+            "prior_draft": prior_text or None,
+            "had_prior_draft": bool(prior_text),
+            "prompt_preview": f"Chair final · draft {len(prior_text or '')} chars",
             "prompt_full": chair_prompt,
             "est_tokens": max(len(chair_prompt) // 4, 1),
             "context_tokens": context_map.get("__base__", context_tokens),
@@ -695,6 +732,7 @@ async def run_mode_round_robin(
         "steps": steps,
         "iterations": passes,
         "cost": summarize_turn_cost(steps),
+        "model_failures": model_failures,
     }
     return drafts, [], stage3_result, metadata
 

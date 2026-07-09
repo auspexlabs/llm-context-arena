@@ -6,6 +6,7 @@ import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
 import { RoundTrack } from './RoundTrack';
+import { RoundRobinTurns } from './RoundRobinTurns';
 import ArenaStatusBar from './ArenaStatusBar';
 import TurnCostLine from './TurnCostLine';
 import {
@@ -1061,10 +1062,19 @@ export default function ChatInterface({
                 __idx: s.__idx ?? i,
               }));
               const activeMode = lastAssistantMsg?.metadata?.mode || conversation.mode;
+              const isRoundRobin = (activeMode || '').toLowerCase() === 'round_robin';
               return (
                 <>
                   <div className="timeline-detail-pane full">
-                    {renderTimeline(stepsWithIndex, computeActiveIndex(stepsWithIndex))}
+                    {isRoundRobin ? (
+                      <RoundRobinTurns
+                        steps={stepsWithIndex}
+                        expanded={expandedPrompts}
+                        onToggle={togglePrompt}
+                      />
+                    ) : (
+                      renderTimeline(stepsWithIndex, computeActiveIndex(stepsWithIndex))
+                    )}
                   </div>
                   <div className="timeline-roundtrack full">
                     <RoundTrack
