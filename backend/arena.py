@@ -11,6 +11,7 @@ from .openrouter import (
 )
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
 from .cost_tracking import apply_usage_fields, sum_usage_fields, summarize_turn_cost
+from .prompts import render_prompt
 
 COUNCIL_MODES = frozenset({"council", "baseline"})
 
@@ -134,10 +135,7 @@ async def stage1_collect_responses(
                     },
                 }
             )
-        individual_prompt = (
-            f"Answer the user question directly. You are a single model providing your own answer.\n"
-            f"Do not speak for other models or imply a panel.\n\nUser question:\n{prompt}"
-        )
+        individual_prompt = render_prompt("council.stage1", prompt=prompt)
         resp = await query_model(
             model,
             [{"role": "user", "content": individual_prompt}],
@@ -203,37 +201,11 @@ async def stage2_collect_rankings(
         for label, result in zip(labels, stage1_results)
     ])
 
-    ranking_prompt = f"""You are evaluating different responses to the following question:
-
-Question: {user_query}
-
-Here are the responses from different models (anonymized):
-
-{responses_text}
-
-Your task:
-1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
-2. Then, at the very end of your response, provide a final ranking.
-3. IMPORTANT CRITERION: Penalize any response that ignores instructions or invents extra roles. Favor responses that followed instructions exactly.
-
-IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
-- Start with the line "FINAL RANKING:" (all caps, with colon)
-- Then list the responses from best to worst as a numbered list
-- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
-- Do not add any other text or explanations in the ranking section
-
-Example of the correct format for your ENTIRE response:
-
-Response A provides good detail on X but misses Y...
-Response B is accurate but lacks depth on Z...
-Response C offers the most comprehensive answer...
-
-FINAL RANKING:
-1. Response C
-2. Response A
-3. Response B
-
-Now provide your evaluation and ranking:"""
+    ranking_prompt = render_prompt(
+        "council.rank",
+        user_query=user_query,
+        responses_text=responses_text,
+    )
 
     messages = [{"role": "user", "content": ranking_prompt}]
 
@@ -294,24 +266,12 @@ async def stage3_synthesize_final(
         for result in stage2_results
     ])
 
-    chairman_prompt = f"""You are the Chairman of an LLM Arena. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
-
-Original Question: {user_query}
-
-STAGE 1 - Individual Responses:
-{stage1_text}
-
-STAGE 2 - Peer Rankings:
-{stage2_text}
-
-First, briefly summarize what you saw in each stage (2 sentences or a short paragraph per item), covering the key points of each response and ranking. Label this section "What I saw".
-
-Then, provide the final answer to the original question. Consider:
-- The individual responses and their insights
-- The peer rankings and what they reveal about response quality
-- Any patterns of agreement or disagreement
-
-Provide a clear, well-reasoned final answer that represents the arena's collective wisdom:"""
+    chairman_prompt = render_prompt(
+        "council.chair",
+        user_query=user_query,
+        stage1_text=stage1_text,
+        stage2_text=stage2_text,
+    )
 
     messages = [{"role": "user", "content": chairman_prompt}]
 
@@ -638,11 +598,14 @@ async def run_mode_round_robin(
             base_prompt = per_model_prompts.get(model, user_query) if per_model_prompts else user_query
             had_prior = bool(prior_text and prior_text.strip())
             prior_for_prompt = prior_text if had_prior else "(none yet)"
-            turn_prompt = (
-                f"Round Robin pass {iteration}/{passes}, turn {turn}/{len(models)}. "
-                f"You see the latest draft below. Improve accuracy and clarity; keep useful detail. "
-                f"Do not ignore the prior draft when one is provided.\n\n"
-                f"Original question: {user_query}\n\nLatest draft:\n{prior_for_prompt}"
+            turn_prompt = render_prompt(
+                "round_robin.turn",
+                iteration=iteration,
+                passes=passes,
+                turn=turn,
+                model_count=len(models),
+                user_query=user_query,
+                prior_for_prompt=prior_for_prompt,
             )
             full_prompt = f"{base_prompt}\n\n{turn_prompt}"
             start = time.time()
@@ -694,9 +657,10 @@ async def run_mode_round_robin(
     if not drafts:
         return [], [], {"model": "error", "response": "Round Robin failed: no drafts produced."}, {"mode": "round_robin"}
 
-    chair_prompt = (
-        f"Final draft from round robin:\n{prior_text}\n\nOriginal question:\n{user_query}\n\n"
-        "Produce the final answer building on the latest draft; fix any errors and cite context if present."
+    chair_prompt = render_prompt(
+        "round_robin.chair",
+        prior_text=prior_text,
+        user_query=user_query,
     )
     start = time.time()
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])

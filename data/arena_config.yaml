@@ -1,0 +1,22 @@
+# Arena runtime config — loaded once per process (DEC-018 FREEZE).
+# Changes require backend restart. See docs/dec-018-catalog-config-summarizer.md
+version: 1
+
+context:
+  safety_margin: 0.85
+  output_token_allowance: 4000
+  default_registered_limit: 131072
+  context_chunk_cap: 60
+
+summarizer:
+  model: null
+  concurrency: null
+  chairman_fallback: true
+
+catalog:
+  refresh_ttl_hours: 168
+  observation_delta_threshold: 0.10
+  observation_ttl_days: 60
+
+tag_modifiers:
+  free: 0.25

@@ -198,6 +198,12 @@ async def run_turn(
     metadata["context_from_last_chair"] = ctx.context_from_last_chair
     if ctx.summarize_targets:
         metadata["summarize_targets"] = ctx.summarize_targets
+    if ctx.budget_decisions:
+        metadata["budget_decisions"] = {
+            mid: d.to_dict() for mid, d in ctx.budget_decisions.items()
+        }
+    if ctx.summarize_jobs:
+        metadata["summarize_jobs"] = [j.to_dict() for j in ctx.summarize_jobs]
 
     execution = build_arena_execution(
         conversation_id=conversation_id,

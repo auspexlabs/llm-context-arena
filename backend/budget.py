@@ -7,6 +7,8 @@ within each model's context window limits.
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Callable, Awaitable
 
+from .budget_metadata import BudgetDecision, SummarizeJob
+from .component_budget import compute_prompt_components
 from .config import (
     ARENA_MODELS,
     MODEL_CONTEXT_LIMITS,
@@ -15,7 +17,9 @@ from .config import (
     OUTPUT_TOKEN_ALLOWANCE,
     CHAIRMAN_MODEL,
 )
+from .frozen_config.catalog import CatalogLimitResolver
 from .rag_lmstudio import _estimate_tokens
+from .summarizer import SummarizerService
 
 
 @dataclass
@@ -137,36 +141,17 @@ async def summarize_context_for_budget(
     target_tokens: int,
     query_model_fn: Callable,
     chairman_model: str = CHAIRMAN_MODEL,
-) -> str:
-    """
-    Use the Chairman model to compress context to fit within a tighter budget.
-
-    Args:
-        user_question: The user's query
-        context_block: The context to compress
-        target_tokens: Target token count for compressed context
-        query_model_fn: Async function to query the model
-        chairman_model: Model to use for summarization
-
-    Returns:
-        Compressed context string
-    """
-    prompt = (
-        "You are the Chairman of an LLM arena. Summarize the provided context so it can be fed to"
-        " another model with a smaller input window. Keep critical facts, constraints, and code/API"
-        " signatures. Prefer bullet points. Include source hints (filenames/sections) when present."
-        f" Fit the context portion into roughly {target_tokens} tokens or less. Do not omit key safety"
-        " constraints or numbers. Return only the compressed context, not an answer."
-        f"\n\nUser question:\n{user_question}\n\nContext to compress:\n{context_block}"
+    target_model_id: str = "__shared__",
+    summarizer: Optional[SummarizerService] = None,
+) -> Tuple[str, SummarizeJob]:
+    """Compress context via SummarizerService (chairman fallback when unset)."""
+    service = summarizer or SummarizerService(query_model_fn, chairman_model=chairman_model)
+    return await service.summarize_rag(
+        user_question=user_question,
+        context_block=context_block,
+        target_tokens=target_tokens,
+        target_model_id=target_model_id,
     )
-
-    resp = await query_model_fn(
-        chairman_model,
-        [{"role": "user", "content": prompt}],
-        timeout=90.0,
-    )
-
-    return resp.get("content", "") if resp else ""
 
 
 async def build_budgeted_prompts(
@@ -176,56 +161,61 @@ async def build_budgeted_prompts(
     query_model_fn: Callable,
     force_summarize: bool = False,
     budget_override: Optional[int] = None,
+    directive_instructions: str = "",
+    mode_instructions: str = "",
     extra_instructions: str = "",
     arena_models: Optional[List[str]] = None,
     chairman_model: str = CHAIRMAN_MODEL,
     control_prompt: str = "",
-) -> Tuple[str, Dict[str, str], Dict[str, int], Dict[str, int]]:
+    allocator: Optional[BudgetAllocator] = None,
+    resolver: Optional[CatalogLimitResolver] = None,
+    summarizer: Optional[SummarizerService] = None,
+) -> Tuple[
+    str,
+    Dict[str, str],
+    Dict[str, int],
+    Dict[str, int],
+    Dict[str, BudgetDecision],
+    List[SummarizeJob],
+]:
     """
     Build the base prompt and per-model overrides that fit within each model's context window.
 
-    Args:
-        user_content: The user's query
-        context_block: Retrieved/manual context
-        rag_used: Whether RAG retrieval was used
-        query_model_fn: Async function to query models (for summarization)
-        force_summarize: Force context summarization even if under budget
-        budget_override: Optional manual budget override
-        extra_instructions: Additional instructions to append
-        arena_models: List of model IDs (defaults to ARENA_MODELS)
-        chairman_model: Model to use for summarization
-        control_prompt: Control prompt to append when RAG is used
-
     Returns:
-        Tuple of:
-            - base_prompt: The default prompt for models that don't need summarization
-            - per_model_prompts: Dict of model ID -> custom prompt for models needing summarization
-            - context_token_map: Dict of model ID -> context token count
-            - summarize_targets: Dict of model ID -> target token count used for summarization
+        Tuple of base_prompt, per_model_prompts, context_token_map, summarize_targets,
+        budget_decisions, summarize_jobs.
     """
     models = arena_models or ARENA_MODELS
-    allocator = BudgetAllocator()
+    if allocator is None:
+        from .dependencies import get_budget_allocator
 
-    tail = f"\n\n{extra_instructions}" if extra_instructions else ""
+        allocator = get_budget_allocator()
+    resolver = resolver or CatalogLimitResolver()
+    summarizer = summarizer or SummarizerService(query_model_fn, chairman_model=chairman_model)
+
+    tail_parts = [p for p in (directive_instructions, mode_instructions, extra_instructions) if p]
+    tail = ("\n\n" + "\n\n".join(tail_parts)) if tail_parts else ""
+
     base_prompt = (
         f"{context_block}{control_prompt if rag_used else ''}\n\nUser question: {user_content}{tail}"
         if context_block
         else f"{user_content}{tail}"
     )
 
-    # No context - nothing to budget
+    empty_meta: Tuple[Dict[str, BudgetDecision], List[SummarizeJob]] = ({}, [])
     if not context_block:
-        return base_prompt, {}, {}, {}
+        return base_prompt, {}, {}, {}, *empty_meta
 
     base_tokens = _estimate_tokens(base_prompt)
     per_model_prompts: Dict[str, str] = {}
     summary_cache: Dict[int, str] = {}
     context_token_map: Dict[str, int] = {"__base__": _estimate_tokens(context_block)}
     summarize_targets: Dict[str, int] = {}
+    summarize_jobs: List[SummarizeJob] = []
+    compressed_by_model: Dict[str, str] = {}
 
     user_section_tokens = _estimate_tokens(f"User question: {user_content}")
 
-    # If summarization is forced, compute a shared target using the smallest model window
     forced_target = None
     if force_summarize:
         min_budget = allocator.get_minimum_budget(models, budget_override)
@@ -237,7 +227,6 @@ async def build_budgeted_prompts(
         if budget.available_tokens <= 0:
             continue
 
-        # Skip summarization if under budget and not forced
         if not force_summarize and base_tokens <= budget.available_tokens:
             continue
 
@@ -245,20 +234,58 @@ async def build_budgeted_prompts(
         cache_key = target_ctx_tokens
 
         if cache_key not in summary_cache:
-            compressed = await summarize_context_for_budget(
+            compressed, job = await summarize_context_for_budget(
                 user_content,
                 context_block,
                 target_ctx_tokens,
                 query_model_fn,
                 chairman_model,
+                target_model_id=model,
+                summarizer=summarizer,
             )
             summary_cache[cache_key] = compressed or context_block
+            summarize_jobs.append(job)
 
         compressed_context = summary_cache[cache_key]
+        compressed_by_model[model] = compressed_context
         per_model_prompts[model] = (
             f"{compressed_context}{control_prompt if rag_used else ''}\n\nUser question: {user_content}{tail}"
         )
         context_token_map[model] = _estimate_tokens(compressed_context)
         summarize_targets[model] = target_ctx_tokens
 
-    return base_prompt, per_model_prompts, context_token_map, summarize_targets
+    budget_decisions: Dict[str, BudgetDecision] = {}
+    for model in models:
+        breakdown = resolver.breakdown(model, budget_override=budget_override)
+        alloc = allocator.calculate_budget(model, budget_override)
+        rag_text = compressed_by_model.get(model, context_block)
+        components = compute_prompt_components(
+            compressed_context=rag_text,
+            control_prompt=control_prompt,
+            user_content=user_content,
+            directive_instructions=directive_instructions,
+            mode_instructions=mode_instructions,
+            rag_used=rag_used,
+            estimate_fn=_estimate_tokens,
+        )
+        budget_decisions[model] = BudgetDecision(
+            model_id=model,
+            registered_limit=breakdown.registered_limit,
+            effective_limit=breakdown.effective_limit,
+            available_tokens=alloc.available_tokens,
+            tag_modifier=breakdown.tag_modifier,
+            model_modifier=breakdown.model_modifier,
+            summarized=model in summarize_targets,
+            components=components,
+            tags=list(breakdown.tags),
+            budget_override=budget_override,
+        )
+
+    return (
+        base_prompt,
+        per_model_prompts,
+        context_token_map,
+        summarize_targets,
+        budget_decisions,
+        summarize_jobs,
+    )

@@ -1,0 +1,69 @@
+# Models in use — limits and tags (DEC-018). Squads reference model ids only.
+# registered_limit: planning baseline; effective limit applies tag/model modifiers.
+version: 1
+
+models:
+  meta-llama/llama-3.3-70b-instruct:free:
+    tags: [free]
+    registered_limit: 131072
+    provenance: migrated_from_config
+
+  qwen/qwen3-coder:free:
+    tags: [free]
+    registered_limit: 1048576
+    provenance: migrated_from_config
+
+  nvidia/nemotron-3-super-120b-a12b:free:
+    tags: [free]
+    registered_limit: 1000000
+    provenance: migrated_from_config
+
+  openai/gpt-oss-120b:free:
+    tags: [free]
+    registered_limit: 131072
+    provenance: migrated_from_config
+
+  cohere/north-mini-code:free:
+    tags: [free]
+    registered_limit: 256000
+    provenance: migrated_from_config
+
+  tencent/hy3:free:
+    tags: [free]
+    registered_limit: 262144
+    provenance: migrated_from_config
+
+  nousresearch/hermes-3-llama-3.1-405b:free:
+    tags: [free]
+    registered_limit: 131072
+    provenance: migrated_from_config
+
+  qwen/qwen3-next-80b-a3b-instruct:free:
+    tags: [free]
+    registered_limit: 262144
+    provenance: migrated_from_config
+
+  poolside/laguna-xs-2.1:free:
+    tags: [free]
+    registered_limit: 262144
+    provenance: migrated_from_config
+
+  google/gemini-2.5-pro:
+    tags: []
+    registered_limit: 1048576
+    provenance: migrated_from_config
+
+  google/gemini-3.1-pro-preview:
+    tags: []
+    registered_limit: 1048576
+    provenance: migrated_from_config
+
+  anthropic/claude-sonnet-4.5:
+    tags: []
+    registered_limit: 1000000
+    provenance: migrated_from_config
+
+  openai/gpt-5.1:
+    tags: []
+    registered_limit: 400000
+    provenance: migrated_from_config

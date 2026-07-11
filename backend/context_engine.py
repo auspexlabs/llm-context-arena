@@ -10,7 +10,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .budget import BudgetAllocator, build_budgeted_prompts
+from .budget_metadata import BudgetDecision, PromptComponentBudget, SummarizeJob
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
+from .prompts import render_prompt
 from .directives import (
     ParsedDirectives,
     build_directive_instructions,
@@ -23,11 +25,7 @@ from .rag_provider import RAGProvider
 logger = logging.getLogger(__name__)
 
 
-CONTROL_PROMPT = (
-    "\n\n# Retrieval guidance\n"
-    "If the provided context seems incomplete or missing related files or functions, "
-    "explicitly say what seems missing (by filename or concept) and ask the user to provide it."
-)
+CONTROL_PROMPT = render_prompt("rag.control")
 
 
 def get_last_chair_context(conversation: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]], Optional[str]]:
@@ -73,6 +71,11 @@ class ContextResult:
     context_token_map: Dict[str, int]
     summarize_targets: Dict[str, int]
     instruction_text: str
+    directive_instructions: str = ""
+    mode_instructions: str = ""
+    budget_decisions: Dict[str, BudgetDecision] = field(default_factory=dict)
+    summarize_jobs: List[SummarizeJob] = field(default_factory=list)
+    component_budgets: Dict[str, PromptComponentBudget] = field(default_factory=dict)
     context_from_last_chair: bool = False
     warnings: List[str] = field(default_factory=list)
 
@@ -123,6 +126,8 @@ class ContextEngine:
                 context_token_map={},
                 summarize_targets={},
                 instruction_text="",
+                directive_instructions="",
+                mode_instructions="",
                 warnings=list(directives.warnings),
             )
 
@@ -158,24 +163,36 @@ class ContextEngine:
         if not context_block:
             context_sources = []
 
-        instruction_parts = [
-            build_directive_instructions(directives),
-            build_mode_instructions(mode),
-        ]
-        instruction_text = "\n".join([p for p in instruction_parts if p])
+        directive_instructions = build_directive_instructions(directives)
+        mode_instructions = build_mode_instructions(mode)
+        instruction_text = "\n".join(
+            [p for p in (directive_instructions, mode_instructions) if p]
+        )
 
-        base_prompt, per_model_prompts, context_token_map, summarize_targets = await build_budgeted_prompts(
+        (
+            base_prompt,
+            per_model_prompts,
+            context_token_map,
+            summarize_targets,
+            budget_decisions,
+            summarize_jobs,
+        ) = await build_budgeted_prompts(
             clean_query,
             context_block,
             rag_used,
             self.query_model_fn,
             force_summarize=directives.force_summarize,
             budget_override=directives.budget_override,
-            extra_instructions=instruction_text,
+            directive_instructions=directive_instructions,
+            mode_instructions=mode_instructions,
             arena_models=models,
             chairman_model=chairman_model,
             control_prompt=CONTROL_PROMPT,
+            allocator=self.budget_allocator,
         )
+        component_budgets = {
+            mid: decision.components for mid, decision in budget_decisions.items()
+        }
 
         logger.info(
             "Context prepared (convo=%s user_len=%d ctx_chars=%d budgeted=%s skip_rag=%s "
@@ -201,6 +218,11 @@ class ContextEngine:
             context_token_map=context_token_map,
             summarize_targets=summarize_targets,
             instruction_text=instruction_text,
+            directive_instructions=directive_instructions,
+            mode_instructions=mode_instructions,
+            budget_decisions=budget_decisions,
+            summarize_jobs=summarize_jobs,
+            component_budgets=component_budgets,
             context_from_last_chair=context_from_last_chair,
             warnings=list(directives.warnings),
         )
