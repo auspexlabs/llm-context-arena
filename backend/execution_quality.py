@@ -243,6 +243,32 @@ def assess_from_response_dict(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def _format_issue_line(issue: Dict[str, Any]) -> str:
+    """Render one issue as a readable agent-notice line."""
+    code = issue.get("code", "issue")
+    if code == "model_failure":
+        model = (issue.get("model") or "?").split("/")[-1]
+        status = issue.get("status")
+        msg = (issue.get("message") or "")[:120]
+        return f"- model_failure: {model} (HTTP {status}) — {msg}"
+    if code == "context_compressed":
+        return "- context was chairman-summarized for token budget"
+    if message := issue.get("message"):
+        return f"- {code}: {message}"
+
+    failed = issue.get("failed")
+    expected = issue.get("expected")
+    succeeded = issue.get("succeeded")
+    if failed is not None and expected is not None:
+        if succeeded is not None:
+            return f"- {code}: {failed} of {expected} failed ({succeeded} succeeded)"
+        return f"- {code}: {failed} of {expected} failed"
+    if succeeded is not None and expected is not None:
+        return f"- {code}: {succeeded} of {expected} succeeded"
+
+    return f"- {code}: execution degraded"
+
+
 def format_agent_notice(quality: Dict[str, Any]) -> str:
     """Human/agent-readable banner when execution is not acceptable."""
     if quality.get("acceptable"):
@@ -255,17 +281,7 @@ def format_agent_notice(quality: Dict[str, Any]) -> str:
         "Issues:",
     ]
     for issue in quality.get("issues") or []:
-        code = issue.get("code", "issue")
-        if code == "model_failure":
-            model = (issue.get("model") or "?").split("/")[-1]
-            status = issue.get("status")
-            msg = (issue.get("message") or "")[:120]
-            lines.append(f"- model_failure: {model} (HTTP {status}) — {msg}")
-        elif code == "context_compressed":
-            lines.append("- context was chairman-summarized for token budget")
-        else:
-            msg = issue.get("message") or issue
-            lines.append(f"- {code}: {msg}")
+        lines.append(_format_issue_line(issue))
 
     recs = quality.get("recommendations") or []
     if recs:

@@ -61,6 +61,25 @@ def test_empty_final_is_failed():
     assert quality["severity"] == "failed"
 
 
+def test_agent_notice_formats_count_issues_without_raw_dict():
+    quality = assess_execution_quality(
+        mode="round_robin",
+        metadata={
+            "arena_models": ["a", "b", "c"],
+            "steps": [
+                {"role": "draft_p1_t1", "model": "a", "response": "ok"},
+                {"role": "draft_p1_t2", "model": "b", "response": ""},
+                {"role": "draft_p1_t3", "model": "c", "response": ""},
+                {"role": "chair_final", "model": "chair", "response": "final"},
+            ],
+        },
+        stage3={"model": "chair", "response": "final"},
+    )
+    notice = format_agent_notice(quality)
+    assert "empty_draft_responses: 2 of 3 failed (1 succeeded)" in notice
+    assert "{" not in notice
+
+
 def test_assess_from_response_dict():
     payload = {
         "metadata": {

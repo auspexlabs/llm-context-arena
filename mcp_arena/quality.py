@@ -12,7 +12,7 @@ def enrich_turn_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not payload or payload.get("reset"):
         return payload
     enriched = dict(payload)
-    quality = assess_from_response_dict(enriched)
+    quality = enriched.get("execution_quality") or assess_from_response_dict(enriched)
     enriched["execution_quality"] = quality
     notice = format_agent_notice(quality)
     if notice:

@@ -19,7 +19,7 @@ from .models import (
     Stage2Result,
     Stage3Result,
 )
-from .execution_quality import assess_from_response_dict
+from .execution_quality import assess_from_response_dict, format_agent_notice
 from .storage import reset_conversation
 from .storage_service import StorageService
 
@@ -212,7 +212,11 @@ async def run_turn(
     )
     response_dict = execution.to_response_dict()
     response_dict["warnings"] = list(ctx.warnings or [])
-    response_dict["execution_quality"] = assess_from_response_dict(response_dict)
+    quality = assess_from_response_dict(response_dict)
+    response_dict["execution_quality"] = quality
+    notice = format_agent_notice(quality)
+    if notice:
+        response_dict["agent_notice"] = notice
 
     if save_assistant:
         if title_task:
