@@ -160,6 +160,16 @@ Backend must be running (`uv run python -m backend.main`).
 
 ---
 
+## Phase 1.5 — Economics layer (DEC-018)
+
+Catalog, frozen config, summarizer service, prompt registry, component token budgets, and metrics instrumentation. Extends the control plane so agents see honest per-model limits and inspectable system injections before accepting a turn.
+
+**Design doc:** [`dec-018-catalog-config-summarizer.md`](dec-018-catalog-config-summarizer.md)  
+**Checklist:** [`piv-001-checklist.md`](piv-001-checklist.md) → Phase 1.5  
+**Ledger:** `DEC-018`, `DEF-005`–`DEF-009`
+
+---
+
 ## Decision record
 
-Append to `docs/decision_log.md` as DEC-015 when committed.
+See `docs/decision_log.md` — `DEC-015` (control plane), `DEC-016` (failures), `DEC-017` (execution_quality), `DEC-018` (catalog/config/summarizer).

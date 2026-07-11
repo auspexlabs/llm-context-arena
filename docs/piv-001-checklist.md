@@ -39,6 +39,32 @@ See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). **Remediated
 
 ---
 
+## Phase 1.5 — Catalog, frozen config, summarizer, prompts (DEC-018)
+
+**Design doc:** [`dec-018-catalog-config-summarizer.md`](dec-018-catalog-config-summarizer.md)
+
+### Config & catalog
+- [ ] `arena_config.yaml` + `model_catalog.yaml` (Pydantic + FREEZE loader — one read per PID)
+- [ ] OpenRouter catalog refresh → registered limits; tag modifiers (`free`, extensible)
+- [ ] Observation store: pending / accepted / archived tables; 10% delta gate; 60-day re-verify
+- [ ] CLI/MCP: `catalog refresh`, `catalog effective-limits`, `config validate`, plan-selection observation warnings
+
+### Summarizer & budget
+- [ ] `summarizer_model` + chairman fallback log; `SummarizeJob` metadata
+- [ ] Per-model threshold summarize; pool concurrency `len(arena)-1`
+- [ ] `PromptComponentBudget` + `BudgetDecision` per turn (rag/system/mode/turn/user)
+- [ ] RAG pre-cap (modest default chunk count); AST-boundary merge before summarize
+- [ ] Summarizer modes: `context.rag`, `context.user`, `mid_turn.semantic` (distinct `prompt_id`s)
+- [ ] Prompt registry + API/MCP expose; wire metrics counters (DEF-006 instrumentation only)
+
+### Quality (extend DEC-017)
+- [x] `execution_quality` + `agent_notice` on API/MCP
+- [ ] Attach summarize failures, budget decisions, observation flags to `execution_quality`
+
+**Defers:** `DEF-005` synthesis model · `DEF-006` Prom stack · `DEF-007` Graph+N · `DEF-008` UI catalog editor · `DEF-009` ContentChecker OSS
+
+---
+
 ## Phase 1 — Turn state + step API (council first)
 
 ### Data model
@@ -93,7 +119,8 @@ See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). **Remediated
 |------|--------|
 | API | `backend/main.py` |
 | Arena | `backend/arena.py` |
-| Context | `backend/context_engine.py`, `backend/directives.py`, `backend/budget.py` |
+| Context | `backend/context_engine.py`, `backend/directives.py`, `backend/budget.py`, `backend/execution_quality.py` |
+| Catalog (DEC-018) | `data/arena_config.yaml`, `data/model_catalog.yaml` (planned) |
 | Models | `backend/models.py` |
 | Storage | `backend/storage.py`, `backend/storage_service.py` |
 | OpenRouter | `backend/openrouter.py` |

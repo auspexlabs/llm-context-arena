@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from mcp_arena.client import ArenaClient
+from mcp_arena.quality import enrich_turn_payload
 
 BAYENCE_ROOT = "/home/phaze/PycharmProjects/Bayence-Certus/"
 EXISTING_CONVO = "38198b96-b929-4422-ae9e-e5c85402cbcc"
@@ -40,10 +41,10 @@ async def run_round_robin(client: ArenaClient, conversation_id: str) -> dict:
     await ensure_index(client, cid)
     print(f"\n=== Round Robin convo {cid} ===", file=sys.stderr)
     query = (
-        "@cite Tell me about the authentication and session handling in this codebase. "
+        "@tokenbudget 8000 @cite Tell me about the authentication and session handling in this codebase. "
         "What are the main entry points and how does a request get authorized?"
     )
-    result = await client.send_message(cid, query)
+    result = enrich_turn_payload(await client.send_message(cid, query))
     steps = (result.get("metadata") or {}).get("steps") or []
     models = [s.get("model") for s in steps]
     print("steps:", len(steps), "models:", models, file=sys.stderr)
@@ -82,7 +83,7 @@ async def main() -> None:
     parser.add_argument("--index-only", action="store_true")
     args = parser.parse_args()
 
-    client = ArenaClient(agent_id="dogfood-cli")
+    client = ArenaClient(agent_id="dogfood-cli", timeout=1800.0)
     base = EXISTING_CONVO
 
     manifest = await ensure_index(client, base)
@@ -119,8 +120,11 @@ async def main() -> None:
         print(_short({
             "conversation_id": run["conversation_id"],
             "mode": run["mode"],
+            "execution_quality": r.get("execution_quality"),
+            "agent_notice": (r.get("agent_notice") or "")[:600],
             "stage3_preview": (r.get("stage3") or {}).get("response", "")[:500],
             "step_count": len(meta.get("steps") or []),
+            "summarize_targets": meta.get("summarize_targets"),
             "cost": meta.get("cost"),
             "context_sources": len(r.get("context_sources") or []),
         }))

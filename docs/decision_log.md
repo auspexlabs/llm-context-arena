@@ -267,6 +267,17 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **decision:** Per-step `step_complete` SSE + `normalize_arena_results()` (advanced modes: empty `stage1`, full `metadata.steps`). Unified `step_index`/`step_total` progress. UI: council → Stage1/2/3; advanced → RoundTrack timeline only. Register `baseline` → council runner.
 - **impact:** Unblocks honest execution contract for PIV-001 agent step API.
 
+### DEC-018: Model catalog, frozen config, summarizer service, prompt registry (PIV-001 Phase 1.5)
+- **date:** 2026-07-10 · **status:** accepted · **triggered_by:** dogfood free-tier limit mismatch; user architecture session on summarizer choice, catalog modifiers, observability, and config bifurcation · **docs_updated:** `docs/dec-018-catalog-config-summarizer.md`, `docs/decision_log.md`, `docs/piv-001-checklist.md`, `docs/agent-control-plane-architecture.md` · **related:** `PIV-001`, `DEC-017`, `DEC-016`, `DEF-005`–`DEF-009` · **doc:** [`docs/dec-018-catalog-config-summarizer.md`](dec-018-catalog-config-summarizer.md)
+- **decision:** Bifurcate config: `arena_config.yaml` (runtime) + `model_catalog.yaml` (models in use). Process **FREEZE**: load+validate once per PID, immutable thereafter (Certus-style manager pattern, no mid-flight reload). **Summarizer:** optional `summarizer_model`; chairman fallback with log; fresh one-shot sessions; per-model threshold summarize (not shared-min except `@summarize`); concurrency `len(arena)-1` excluding chairman. **Limits:** trust OpenRouter `context_length` as registered baseline; **observed** limits win only after user-gated acceptance (10% delta flag; 60-day re-verify); append-only history + archive tables. **Prompt registry** first-class (`prompt_id`, version, modes); expose via API/MCP/metrics. **Token budget:** `PromptComponentBudget` per mode (rag, system, mode, turn, user); RAG chunk cap pre-summarize with AST-aware boundaries (`lang_registry` + tokenjam-style structure preserve for compression). Extend `execution_quality` + `SummarizeJob` + `BudgetDecision` metadata. Metrics: Prometheus-friendly **counters/histograms** (accumulation), not per-turn raw cardinality — full stack deferred (`DEF-006`).
+- **defers:** dedicated synthesis model flag (`DEF-005`); Graph+N rerank hop (`DEF-007`); UI catalog editor (`DEF-008`); ContentChecker OSS extraction (`DEF-009`); Prom/Victoria/Grafana deploy (`DEF-006`).
+- **impact:** Agent control plane gains honest economics (free-tier modifiers), inspectable prompts, and vettable limit observations — foundation for CLI/MCP plan-selection gates.
+
+### DEC-017: execution_quality gate for agent/MCP turns
+- **date:** 2026-07-09 · **status:** accepted · **triggered_by:** dogfood RR with free squad showed partial failures accepted as success; user asked MCP agents to flag empty/failed responses · **docs_updated:** `backend/execution_quality.py`, `backend/run_turn.py`, `mcp_arena/quality.py`, `mcp_arena/server.py`, `scripts/dogfood_bayence.py`, `tests/unit/test_execution_quality.py` · **related:** `DEC-016`, `PIV-001`
+- **decision:** `assess_execution_quality()` returns `acceptable`, `severity`, `issues`, `recommendations` on every full turn. Sync API and MCP `send_message`/`advance_turn`/`get_turn` attach `execution_quality` plus `agent_notice` when not acceptable. Agents must not present degraded deliberation without user disclosure/retry.
+- **impact:** MCP instructions and payloads make partial free-tier failures explicit (RR chain degraded, model_failure, empty drafts).
+
 ### DEC-016: Surface OpenRouter model failures in arena metadata
 - **date:** 2026-07-09 · **status:** accepted · **triggered_by:** fight dogfood showed 4/5 free models silently dropped; probe revealed 429 rate limits + 404 privacy guardrails · **docs_updated:** `backend/openrouter.py`, `backend/arena.py`, `backend/routes/execution.py`, `frontend/src/components/ChatInterface.jsx`, `mcp_arena/` · **related:** `DEC-015`, `PIV-001`
 - **decision:** `query_model` returns structured `_failed` payloads (status, message, provider) instead of `None`. Arena accumulates `metadata.model_failures[]` per stage. Opt-in `GET .../messages/{i}/execution?include=...` for history; MCP `get_message_execution` + `ensure_indexed`. UI shows failure panel; live timeline clears on stream complete (metadata.steps canonical).
@@ -287,3 +298,28 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **decision:** Defer implementation. Interim guidance: exclude `docs/*_results*.json` from user indexes where possible; consider `RERANK_ENABLED=false` or BGE override if latency/precision hurt.
 - **revisit_when:** (a) user indexes repos with large `docs/` or generated JSON, **or** (b) query-time Jina latency on CPU exceeds interactive budget (~30s/query observed at 396 chunks).
 - **candidate fixes:** conditional rerank (skip CE when ColBERT margin high); demote `docs/` + `*.json` chunk types; per-file ColBERT upsert (DEC-008 follow-up) to avoid full re-encode on delta.
+
+### DEF-005: Defer dedicated synthesis model (separate from summarizer/chair)
+- **date:** 2026-07-10 · **status:** active · **triggered_by:** `DEC-018` architecture session · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-018`, `PIV-001`
+- **decision:** Defer `synthesis_model` distinct from `chairman_model` and `summarizer_model`. Interim: chairman performs final synthesis; catalog/schema reserve `synthesis_model` nullable field for future flag.
+- **revisit_when:** chairman load from concurrent summarize+synthesis becomes measurable bottleneck, or user requests cost/latency split.
+
+### DEF-006: Defer observability stack deploy (Prometheus → Victoria → Grafana)
+- **date:** 2026-07-10 · **status:** active · **triggered_by:** `DEC-018`; user wants metrics-ready instrumentation before stack · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-018`, `PIV-001`
+- **decision:** Defer running Prom/Victoria/Grafana. Phase 1.5 ships in-process counters/histograms + `/metrics` exposition and documents label cardinality rules. Prefer accumulation (histograms, counters) over per-request raw series; no per-turn high-cardinality labels (convo_id, model_id ok as bounded enums).
+- **revisit_when:** DEC-018 Phase B metrics land and scrape contract is stable.
+
+### DEF-007: Defer Graph+N enrichment after BGE rerank
+- **date:** 2026-07-10 · **status:** active · **triggered_by:** `DEC-018` RAG limit discussion · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-004`, `DEC-011`, `DEC-018`
+- **decision:** Defer optional retrieval pass: rerank → graph hop+1 → BGE again → AST-match filter. Interim: cap final RAG bundle by token budget + AST-boundary chunk merge (existing `lang_registry`); post-facto trim/summarize when over cap.
+- **revisit_when:** retrieval recall gaps persist after catalog limits + structure-aware compression.
+
+### DEF-008: Defer full UI model catalog editor
+- **date:** 2026-07-10 · **status:** active · **triggered_by:** `DEC-018` · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-018`, `PIV-001`
+- **decision:** Defer GUI catalog CRUD. Interim: hand-edit `model_catalog.yaml` + CLI/MCP `arena catalog` commands; settings panel continues squad/chair/repo only until Phase C.
+- **revisit_when:** non-developer users need to accept observation deltas or edit modifiers without YAML.
+
+### DEF-009: Defer ContentChecker as Strata OSS library (tokenjam structure preserve)
+- **date:** 2026-07-10 · **status:** active · **triggered_by:** `DEC-018`; tokenjam `core/summarize/wrap.py` + `detect.py` reuse · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-018`
+- **decision:** Defer extracting wrap/detect/restore structure gate into standalone `ContentChecker` package shared by tokenjam and arena. Interim: port or vendor minimal wrap/restore into arena summarizer path; track parity with tokenjam structure gate tests.
+- **revisit_when:** arena compression ships and duplication pain exceeds extract cost.

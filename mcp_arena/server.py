@@ -9,12 +9,15 @@ from typing import Any, Dict, List, Optional
 from mcp.server.fastmcp import FastMCP
 
 from .client import ArenaClient
+from .quality import enrich_turn_payload, enrich_turn_record
 
 mcp = FastMCP(
     "llm-context-arena",
     instructions=(
         "LLM Context Arena control plane. Use index tools before deliberation on code. "
         "Prefer create_turn + advance_turn for stepwise council runs; send_message for full turns. "
+        "Always read execution_quality.acceptable and agent_notice — if acceptable is false, "
+        "inform the user and retry; do not present partial deliberation as success. "
         "Stage 1 spread and stage 2 aggregate_rankings are first-class disagreement signals."
     ),
 )
@@ -62,8 +65,9 @@ async def send_message(
     conversation_id: str,
     content: str,
 ) -> str:
-    """Run a full arena turn (all stages). Returns stage1, stage2, stage3, metadata."""
-    return _json(await _get_client().send_message(conversation_id, content))
+    """Run a full arena turn (all stages). Returns stage1, stage2, stage3, metadata, execution_quality."""
+    payload = enrich_turn_payload(await _get_client().send_message(conversation_id, content))
+    return _json(payload)
 
 
 @mcp.tool()
@@ -75,13 +79,15 @@ async def create_turn(conversation_id: str, content: str) -> str:
 @mcp.tool()
 async def advance_turn(conversation_id: str, turn_id: str) -> str:
     """Advance council turn by one step: stage1, stage2, or stage3."""
-    return _json(await _get_client().advance_turn(conversation_id, turn_id))
+    payload = enrich_turn_record(await _get_client().advance_turn(conversation_id, turn_id))
+    return _json(payload)
 
 
 @mcp.tool()
 async def get_turn(conversation_id: str, turn_id: str) -> str:
     """Poll turn state. Complete turns include full execution payload."""
-    return _json(await _get_client().get_turn(conversation_id, turn_id))
+    payload = enrich_turn_record(await _get_client().get_turn(conversation_id, turn_id))
+    return _json(payload)
 
 
 @mcp.tool()
@@ -101,7 +107,7 @@ async def run_council_turn(conversation_id: str, content: str) -> str:
     while turn.get("next_step") in {"stage1", "stage2", "stage3"}:
         advanced = await client.advance_turn(conversation_id, turn_id)
         turn = advanced["turn"]
-    return _json(advanced)
+    return _json(enrich_turn_record(advanced))
 
 
 @mcp.tool()
