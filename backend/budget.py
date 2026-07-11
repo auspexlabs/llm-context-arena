@@ -279,7 +279,6 @@ async def build_budgeted_prompts(
             return base_prompt, {}, {}, {}, *empty_meta
 
         target_user_tokens = max(200, min_budget - tail_tokens - 100)
-        summarize_targets: Dict[str, int] = {model: target_user_tokens for model in models}
         compressed_user, job = await summarize_user_for_budget(
             user_content,
             target_user_tokens,
@@ -321,7 +320,7 @@ async def build_budgeted_prompts(
             base_prompt,
             {},
             {},
-            summarize_targets,
+            {},
             budget_decisions,
             [job],
         )

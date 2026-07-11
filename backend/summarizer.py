@@ -79,14 +79,11 @@ class SummarizerService:
                 structure_preserved=structure_preserved,
             )
 
-        wrapped_context, structure_spans = wrap_for_summarize(content_block)
         prompt_vars_with_block = dict(prompt_vars)
-        if "context_block" in prompt_vars_with_block:
+        structure_spans = []
+        if prompt_id == RAG_SUMMARIZE_PROMPT_ID:
+            wrapped_context, structure_spans = wrap_for_summarize(content_block)
             prompt_vars_with_block["context_block"] = wrapped_context
-        elif "user_content" in prompt_vars_with_block:
-            prompt_vars_with_block["user_content"] = wrapped_context
-        elif "responses_text" in prompt_vars_with_block:
-            prompt_vars_with_block["responses_text"] = wrapped_context
 
         prompt_vars_with_block["target_tokens"] = target_tokens
         prompt = render_prompt(prompt_id, **prompt_vars_with_block)
@@ -103,7 +100,7 @@ class SummarizerService:
         content = ""
         outcome = "failed"
         output_tokens = 0
-        structure_preserved = True
+        structure_preserved = not structure_spans
         if resp and not resp.get("_failed"):
             raw_content = str(resp.get("content") or "")
             content, structure_preserved = restore_after_summarize(raw_content, structure_spans)

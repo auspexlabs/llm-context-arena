@@ -543,6 +543,7 @@ async def run_mode_council(
         models,
         model_failures=model_failures,
         query_model_fn=query_model,
+        chairman_model=chairman_model,
     )
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
