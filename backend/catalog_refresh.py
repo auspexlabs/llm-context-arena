@@ -147,6 +147,9 @@ def refresh_catalog_from_remote(
 
     catalog["models"] = models
     _write_yaml(MODEL_CATALOG_PATH, catalog)
+    from .frozen_config import clear_frozen_cache
+
+    clear_frozen_cache()
     meta = {
         "last_refresh_at": summary["refreshed_at"],
         "last_refresh_source": "openrouter",

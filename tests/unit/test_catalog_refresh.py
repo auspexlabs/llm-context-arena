@@ -18,9 +18,15 @@ def test_refresh_catalog_updates_registered_limits(tmp_path, monkeypatch):
     remote = {
         "test/model": {"id": "test/model", "context_length": 200000, "pricing": {"prompt": "0"}},
     }
+    cleared: list[bool] = []
+    monkeypatch.setattr(
+        "backend.frozen_config.clear_frozen_cache",
+        lambda: cleared.append(True),
+    )
     summary = refresh_catalog_from_remote(remote, dry_run=False)
     assert "test/model" in summary["updated"]
     assert "registered_limit: 200000" in catalog_path.read_text(encoding="utf-8")
+    assert cleared == [True]
 
 
 def test_validate_frozen_config_ok():
