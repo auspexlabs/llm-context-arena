@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
+from .model_failures import enrich_failure_record
 
 logger = logging.getLogger(__name__)
 
@@ -32,24 +33,28 @@ def failure_record(
 ) -> Dict[str, Any]:
     """Normalize a failed query into metadata.model_failures entry."""
     if resp and is_query_failure(resp):
-        return {
+        return enrich_failure_record(
+            {
+                "model": model,
+                "stage": stage,
+                "role": role,
+                "status": resp.get("error_status"),
+                "message": resp.get("error_message"),
+                "provider": resp.get("error_provider"),
+                "raw": resp.get("error_raw"),
+            }
+        )
+    return enrich_failure_record(
+        {
             "model": model,
             "stage": stage,
             "role": role,
-            "status": resp.get("error_status"),
-            "message": resp.get("error_message"),
-            "provider": resp.get("error_provider"),
-            "raw": resp.get("error_raw"),
+            "status": None,
+            "message": "No response from model (timeout or unknown error)",
+            "provider": None,
+            "raw": None,
         }
-    return {
-        "model": model,
-        "stage": stage,
-        "role": role,
-        "status": None,
-        "message": "No response from model (timeout or unknown error)",
-        "provider": None,
-        "raw": None,
-    }
+    )
 
 
 def _parse_error_body(response: httpx.Response) -> Dict[str, Any]:

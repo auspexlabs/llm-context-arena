@@ -29,6 +29,7 @@ class TestOpenRouterFailures:
         assert rec["status"] == 429
         assert "Provider" in rec["message"]
         assert rec["provider"] == "Venice"
+        assert rec["failure_kind"] == "rate_limit"
 
     def test_usable_response_requires_content(self):
         assert is_usable_response({"content": "hello"})

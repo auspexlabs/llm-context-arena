@@ -138,6 +138,26 @@ def test_structure_not_preserved_surfaces_warning():
     assert quality["recommendations"]
 
 
+def test_failure_kinds_drive_recommendations():
+    quality = assess_execution_quality(
+        mode="council",
+        metadata={
+            "model_failures": [
+                {
+                    "model": "openai/gpt-4",
+                    "status": 429,
+                    "message": "rate limited",
+                    "failure_kind": "rate_limit",
+                }
+            ],
+        },
+        stage3={"response": "final"},
+    )
+    assert quality["failure_kinds"] == ["rate_limit"]
+    assert any("Rate limited" in rec for rec in quality["recommendations"])
+    assert any(i.get("failure_kind") == "rate_limit" for i in quality["issues"])
+
+
 def test_assess_from_response_dict():
     payload = {
         "metadata": {
