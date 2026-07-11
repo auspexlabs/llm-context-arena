@@ -91,6 +91,7 @@ async def summarize_targets_parallel(
                     target_tokens=base_job.target_tokens,
                     cache_hit=base_job.cache_hit,
                     outcome=base_job.outcome,
+                    structure_preserved=base_job.structure_preserved,
                 )
             )
         else:
@@ -106,6 +107,7 @@ async def summarize_targets_parallel(
                     target_tokens=base_job.target_tokens,
                     cache_hit=True,
                     outcome=base_job.outcome,
+                    structure_preserved=base_job.structure_preserved,
                 )
             )
 

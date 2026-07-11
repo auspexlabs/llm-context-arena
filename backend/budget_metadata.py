@@ -55,6 +55,7 @@ class SummarizeJob:
     target_tokens: int
     cache_hit: bool
     outcome: str
+    structure_preserved: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

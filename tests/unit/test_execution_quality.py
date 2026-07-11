@@ -117,6 +117,27 @@ def test_execution_quality_includes_budget_and_summarize_fields():
     assert format_agent_notice(quality) == ""
 
 
+def test_structure_not_preserved_surfaces_warning():
+    quality = assess_execution_quality(
+        mode="council",
+        metadata={
+            "summarize_jobs": [
+                {
+                    "outcome": "ok",
+                    "prompt_id": "context.summarize.rag",
+                    "target_model_id": "model/small",
+                    "structure_preserved": False,
+                    "chairman_fallback": False,
+                    "cache_hit": False,
+                }
+            ],
+        },
+        stage3={"response": "final"},
+    )
+    assert any(i["code"] == "structure_not_preserved" for i in quality["issues"])
+    assert quality["recommendations"]
+
+
 def test_assess_from_response_dict():
     payload = {
         "metadata": {

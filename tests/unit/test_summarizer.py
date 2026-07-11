@@ -54,6 +54,48 @@ async def test_summarizer_cache_miss_on_different_user_question():
 
 
 @pytest.mark.asyncio
+async def test_summarize_user_mode():
+    service = SummarizerService(_fake_query, chairman_model="chair/test")
+    text, job = await service.summarize_user(
+        user_content="long user question",
+        target_tokens=300,
+        target_model_id="model/small",
+    )
+    assert text == "compressed context"
+    assert job.prompt_id == "context.summarize.user"
+    assert job.structure_preserved is True
+
+
+@pytest.mark.asyncio
+async def test_summarize_semantic_mode():
+    service = SummarizerService(_fake_query, chairman_model="chair/test")
+    text, job = await service.summarize_semantic(
+        user_query="What is X?",
+        responses_text="Response A:\nlong answer",
+        target_tokens=1500,
+        target_model_id="model/small",
+    )
+    assert text == "compressed context"
+    assert job.prompt_id == "mid_turn.semantic"
+
+
+@pytest.mark.asyncio
+async def test_structure_preserved_recorded_on_failure():
+    async def partial_restore(model, messages, timeout=90.0):
+        return {"content": "summary without placeholders", "usage": {}}
+
+    service = SummarizerService(partial_restore, chairman_model="chair/test")
+    text, job = await service.summarize_rag(
+        user_question="q",
+        context_block="--- src/a.py:1-5 ---\nbody\n",
+        target_tokens=100,
+        target_model_id="m1",
+    )
+    assert "Structure preserved" in text or "--- src/a.py" in text
+    assert job.structure_preserved is False
+
+
+@pytest.mark.asyncio
 async def test_summarizer_cache_hit():
     service = SummarizerService(_fake_query, chairman_model="chair/test")
     await service.summarize_rag(

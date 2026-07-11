@@ -9,8 +9,29 @@ class TestPromptRegistry:
     def test_list_includes_core_prompts(self):
         ids = {p["prompt_id"] for p in list_prompts()}
         assert "context.summarize.rag" in ids
+        assert "context.summarize.user" in ids
+        assert "mid_turn.semantic" in ids
         assert "council.rank" in ids
         assert "mode.council" in ids
+
+    def test_render_summarize_user(self):
+        text = render_prompt(
+            "context.summarize.user",
+            user_content="Very long user question about auth",
+            target_tokens=800,
+        )
+        assert "Very long user question" in text
+        assert "800" in text
+
+    def test_render_mid_turn_semantic(self):
+        text = render_prompt(
+            "mid_turn.semantic",
+            user_query="What is X?",
+            responses_text="Response A:\nanswer",
+            target_tokens=2000,
+        )
+        assert "What is X?" in text
+        assert "Response A" in text
 
     def test_render_summarize_rag(self):
         text = render_prompt(

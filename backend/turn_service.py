@@ -13,6 +13,7 @@ from .arena import (
     stage3_synthesize_final,
 )
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
+from .openrouter import query_model
 from .cost_tracking import summarize_turn_cost
 from .dependencies import get_context_engine
 from .models import TurnCheckpoint, TurnRecord, TurnStatus
@@ -166,10 +167,13 @@ class TurnService:
 
     async def _run_stage2(self, turn: TurnRecord) -> TurnRecord:
         ckpt = turn.checkpoint
-        stage2_results, label_to_model = await stage2_collect_rankings(
+        stage2_results, label_to_model, mid_turn_jobs = await stage2_collect_rankings(
             turn.user_query,
             turn.stage1,
             ckpt.arena_models,
+            query_model_fn=query_model,
+            chairman_model=ckpt.chairman_model,
+            budget_override=(ckpt.directives or {}).get("budget_override"),
         )
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
@@ -178,6 +182,10 @@ class TurnService:
         turn.status = TurnStatus.STAGE2_COMPLETE
         turn.metadata["label_to_model"] = label_to_model
         turn.metadata["aggregate_rankings"] = aggregate_rankings
+        if mid_turn_jobs:
+            existing = list(turn.metadata.get("summarize_jobs") or [])
+            existing.extend(j.to_dict() for j in mid_turn_jobs)
+            turn.metadata["summarize_jobs"] = existing
         return turn
 
     async def _run_stage3(self, turn: TurnRecord) -> TurnRecord:

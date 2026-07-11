@@ -43,6 +43,40 @@ _register(
 
 _register(
     PromptEntry(
+        prompt_id="context.summarize.user",
+        version="1",
+        mode="context",
+        variables=("user_content", "target_tokens"),
+        description="Compress user input alone to fit a model's effective window.",
+        template=(
+            "Compress the user's question or input so it can be fed to another model with a smaller"
+            " input window. Preserve intent, constraints, numbers, and named entities. Prefer bullet"
+            " points when helpful. Fit the user portion into roughly {target_tokens} tokens or less."
+            " Return only the compressed user input, not an answer."
+            "\n\nUser input to compress:\n{user_content}"
+        ),
+    )
+)
+
+_register(
+    PromptEntry(
+        prompt_id="mid_turn.semantic",
+        version="1",
+        mode="context",
+        variables=("user_query", "responses_text", "target_tokens"),
+        description="Between-stage semantic compression for peer evaluation (council/fight).",
+        template=(
+            "You are compressing intermediate arena responses for peer evaluation. Preserve each"
+            " response's key claims, reasoning, and distinctive points. Keep response labels"
+            " (Response A, Response B, etc.) intact. Fit the combined responses into roughly"
+            " {target_tokens} tokens or less. Return only the compressed responses block."
+            "\n\nOriginal question:\n{user_query}\n\nResponses to compress:\n{responses_text}"
+        ),
+    )
+)
+
+_register(
+    PromptEntry(
         prompt_id="rag.control",
         version="1",
         mode="context",
