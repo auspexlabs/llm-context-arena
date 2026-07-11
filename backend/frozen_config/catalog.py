@@ -9,6 +9,12 @@ from .loader import get_frozen_snapshot
 from .schemas import ArenaConfig, FrozenSnapshot, ModelCatalog, ModelEntry
 
 
+def _observation_store():
+    from ..observations.store import get_observation_store
+
+    return get_observation_store()
+
+
 @dataclass(frozen=True)
 class LimitBreakdown:
     model_id: str
@@ -62,6 +68,16 @@ class CatalogLimitResolver:
 
         return MODEL_CONTEXT_LIMITS.get(model_id) or self.arena.context.default_registered_limit
 
+    def planning_base_limit(self, model_id: str) -> int:
+        """Observed limit wins after user acceptance; else registered baseline."""
+        accepted = _observation_store().get_accepted(model_id)
+        if accepted:
+            return accepted.observed_limit
+        entry = self.catalog.models.get(model_id)
+        if entry and entry.observed_limit is not None:
+            return entry.observed_limit
+        return self.registered_limit(model_id)
+
     def breakdown(
         self,
         model_id: str,
@@ -70,9 +86,10 @@ class CatalogLimitResolver:
         entry = self.catalog.models.get(model_id)
         tags = _infer_tags(model_id, entry)
         registered = self.registered_limit(model_id)
+        base = self.planning_base_limit(model_id)
         tag_mod = _combined_tag_modifier(tags, self.arena)
         model_mod = entry.model_modifier if entry else 1.0
-        effective = max(1, int(registered * tag_mod * model_mod))
+        effective = max(1, int(base * tag_mod * model_mod))
         margin = self.arena.context.safety_margin
         output = self.arena.context.output_token_allowance
         available = int(effective * margin) - output

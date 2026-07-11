@@ -194,6 +194,21 @@ class ContextEngine:
             mid: decision.components for mid, decision in budget_decisions.items()
         }
 
+        warnings = list(directives.warnings)
+        try:
+            from .observations import get_observation_service
+
+            pending = get_observation_service().observation_pending_dicts(models)
+            for obs in pending:
+                warnings.append(
+                    "Limit observation pending for "
+                    f"{obs['model_id']}: observed={obs['observed_limit']} "
+                    f"registered={obs['registered_limit']} "
+                    f"(delta={obs['delta_ratio']:.0%}) — accept or decline before trusting limits."
+                )
+        except Exception:
+            logger.debug("Observation warnings skipped", exc_info=True)
+
         logger.info(
             "Context prepared (convo=%s user_len=%d ctx_chars=%d budgeted=%s skip_rag=%s "
             "force_sum=%s last_chair=%s preview='%s')",
@@ -224,7 +239,7 @@ class ContextEngine:
             summarize_jobs=summarize_jobs,
             component_budgets=component_budgets,
             context_from_last_chair=context_from_last_chair,
-            warnings=list(directives.warnings),
+            warnings=warnings,
         )
 
     def estimate_tokens(self, text: str) -> int:

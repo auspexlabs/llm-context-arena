@@ -110,6 +110,7 @@ def _assistant_metadata(
         "context_from_last_chair": ctx.context_from_last_chair,
         "model_failures": metadata.get("model_failures") or [],
         "summarize_targets": metadata.get("summarize_targets") or {},
+        "observation_pending": metadata.get("observation_pending") or [],
     }
 
 
@@ -205,6 +206,19 @@ async def run_turn(
         }
     if ctx.summarize_jobs:
         metadata["summarize_jobs"] = [j.to_dict() for j in ctx.summarize_jobs]
+
+    try:
+        from .observations import get_observation_service
+
+        obs_service = get_observation_service()
+        obs_service.record_from_turn_steps(
+            metadata.get("steps"),
+            arena_models=arena_models,
+        )
+        metadata["observation_pending"] = obs_service.observation_pending_dicts(arena_models)
+    except Exception:
+        logger.debug("Observation recording skipped", exc_info=True)
+        metadata.setdefault("observation_pending", [])
 
     execution = build_arena_execution(
         conversation_id=conversation_id,

@@ -20,6 +20,7 @@ from .config import (
 from .frozen_config.catalog import CatalogLimitResolver
 from .rag_lmstudio import _estimate_tokens
 from .summarizer import SummarizerService
+from .summarizer_pool import summarize_targets_parallel
 
 
 @dataclass
@@ -208,7 +209,6 @@ async def build_budgeted_prompts(
 
     base_tokens = _estimate_tokens(base_prompt)
     per_model_prompts: Dict[str, str] = {}
-    summary_cache: Dict[int, str] = {}
     context_token_map: Dict[str, int] = {"__base__": _estimate_tokens(context_block)}
     summarize_targets: Dict[str, int] = {}
     summarize_jobs: List[SummarizeJob] = []
@@ -231,28 +231,23 @@ async def build_budgeted_prompts(
             continue
 
         target_ctx_tokens = forced_target or max(500, budget.available_tokens - user_section_tokens)
-        cache_key = target_ctx_tokens
-
-        if cache_key not in summary_cache:
-            compressed, job = await summarize_context_for_budget(
-                user_content,
-                context_block,
-                target_ctx_tokens,
-                query_model_fn,
-                chairman_model,
-                target_model_id=model,
-                summarizer=summarizer,
-            )
-            summary_cache[cache_key] = compressed or context_block
-            summarize_jobs.append(job)
-
-        compressed_context = summary_cache[cache_key]
-        compressed_by_model[model] = compressed_context
-        per_model_prompts[model] = (
-            f"{compressed_context}{control_prompt if rag_used else ''}\n\nUser question: {user_content}{tail}"
-        )
-        context_token_map[model] = _estimate_tokens(compressed_context)
         summarize_targets[model] = target_ctx_tokens
+
+    if summarize_targets:
+        compressed_by_model, summarize_jobs = await summarize_targets_parallel(
+            user_content=user_content,
+            context_block=context_block,
+            targets=summarize_targets,
+            query_model_fn=query_model_fn,
+            chairman_model=chairman_model,
+            summarizer=summarizer,
+            arena_models=models,
+        )
+        for model, compressed_context in compressed_by_model.items():
+            per_model_prompts[model] = (
+                f"{compressed_context}{control_prompt if rag_used else ''}\n\nUser question: {user_content}{tail}"
+            )
+            context_token_map[model] = _estimate_tokens(compressed_context)
 
     budget_decisions: Dict[str, BudgetDecision] = {}
     for model in models:
