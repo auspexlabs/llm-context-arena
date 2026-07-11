@@ -45,7 +45,7 @@ class TestObservationStore:
 
 
 class TestObservationService:
-    def test_record_from_turn_steps_above_threshold(self, obs_service):
+    def test_record_from_turn_steps_upward_discovery(self, obs_service):
         steps = [
             {"model": "m/a", "prompt_tokens": 200000},
             {"model": "m/a", "prompt_tokens": 150000},
@@ -54,6 +54,24 @@ class TestObservationService:
         assert len(created) == 1
         pending = obs_service.pending_for_models(["m/a"])
         assert len(pending) == 1
+
+    def test_short_prompt_does_not_create_spurious_observation(self, obs_service):
+        steps = [{"model": "m/a", "prompt_tokens": 10000}]
+        created = obs_service.record_from_turn_steps(steps, arena_models=["m/a"])
+        assert created == []
+
+    def test_context_failure_can_propose_downward(self, obs_service):
+        steps = [
+            {
+                "model": "m/a",
+                "prompt_tokens": 50000,
+                "status": "failed",
+                "message": "context length exceeded",
+            }
+        ]
+        created = obs_service.record_from_turn_steps(steps, arena_models=["m/a"])
+        assert len(created) == 1
+        assert created[0].observed_limit == 50000
 
     def test_observation_pending_dicts_flags_threshold(self, obs_service):
         obs_service.store.propose(

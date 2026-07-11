@@ -10,10 +10,32 @@ from ..frozen_config.loader import MODEL_CATALOG_PATH
 from .store import AcceptedObservation, ObservationStore, PendingObservation, get_observation_store
 
 
-def _delta_ratio(registered: int, observed: int) -> float:
-    if registered <= 0:
+def _upward_delta_ratio(registered: int, observed: int) -> float:
+    """Positive delta only — runtime max exceeded registered (upward discovery)."""
+    if registered <= 0 or observed <= registered:
         return 0.0
-    return abs(observed - registered) / registered
+    return (observed - registered) / registered
+
+
+def _is_context_limit_failure(step: Dict[str, Any]) -> bool:
+    """Heuristic for context-window failures (downward discovery)."""
+    if step.get("status") != "failed" and not step.get("_failed"):
+        return False
+    haystack = " ".join(
+        str(step.get(key) or "")
+        for key in ("message", "error_message", "raw", "status")
+    ).lower()
+    return any(
+        token in haystack
+        for token in (
+            "context length",
+            "context window",
+            "maximum context",
+            "context exceeded",
+            "too many tokens",
+            "token limit",
+        )
+    )
 
 
 class ObservationService:
@@ -53,35 +75,58 @@ class ObservationService:
         """Record max successful prompt_tokens per model as candidate observations."""
         if not steps:
             return []
-        max_tokens: Dict[str, int] = {}
+        max_success_tokens: Dict[str, int] = {}
+        failure_tokens: Dict[str, int] = {}
         for step in steps:
             model = step.get("model")
             if not model:
                 continue
             if arena_models and model not in arena_models:
                 continue
-            if step.get("status") == "failed" or step.get("_failed"):
-                continue
             prompt_tokens = int(step.get("prompt_tokens") or 0)
+            if step.get("status") == "failed" or step.get("_failed"):
+                if prompt_tokens > 0 and _is_context_limit_failure(step):
+                    failure_tokens[model] = max(failure_tokens.get(model, 0), prompt_tokens)
+                continue
             if prompt_tokens <= 0:
                 continue
-            max_tokens[model] = max(max_tokens.get(model, 0), prompt_tokens)
+            max_success_tokens[model] = max(max_success_tokens.get(model, 0), prompt_tokens)
 
         created: List[PendingObservation] = []
         threshold = get_frozen_snapshot().arena.catalog.observation_delta_threshold
-        for model_id, observed in max_tokens.items():
+        candidate_models = set(max_success_tokens) | set(failure_tokens)
+        for model_id in candidate_models:
             registered = self.resolver.registered_limit(model_id)
-            delta = _delta_ratio(registered, observed)
-            if delta < threshold:
+            observed = max_success_tokens.get(model_id, 0)
+            failure_observed = failure_tokens.get(model_id, 0)
+
+            # Upward: runtime max prompt_tokens exceeded registered catalog claim.
+            if observed > registered and _upward_delta_ratio(registered, observed) >= threshold:
+                obs = self.store.propose(
+                    model_id=model_id,
+                    registered_limit=registered,
+                    observed_limit=observed,
+                    prompt_tokens=observed,
+                )
+                if obs:
+                    created.append(obs)
                 continue
-            obs = self.store.propose(
-                model_id=model_id,
-                registered_limit=registered,
-                observed_limit=observed,
-                prompt_tokens=observed,
-            )
-            if obs:
-                created.append(obs)
+
+            # Downward: only from context-limit failures, not short successful prompts.
+            if failure_observed > 0:
+                downward_delta = (
+                    (registered - failure_observed) / registered if registered > 0 else 0.0
+                )
+                if downward_delta >= threshold:
+                    obs = self.store.propose(
+                        model_id=model_id,
+                        registered_limit=registered,
+                        observed_limit=failure_observed,
+                        prompt_tokens=failure_observed,
+                        failure_reason="context_limit_failure",
+                    )
+                    if obs:
+                        created.append(obs)
         return created
 
     def accept(self, obs_id: int) -> Optional[AcceptedObservation]:
