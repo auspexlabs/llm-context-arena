@@ -110,6 +110,29 @@ def assess_execution_quality(
             }
         )
 
+    structure_degraded = [
+        job
+        for job in summarize_jobs
+        if job.get("structure_preserved") is False and str(job.get("outcome") or "") == "ok"
+    ]
+    for job in structure_degraded:
+        issues.append(
+            {
+                "code": "structure_not_preserved",
+                "message": (
+                    f"Summarize output for {job.get('target_model_id', '?')} "
+                    "lost structure placeholders; citations were footered."
+                ),
+                "prompt_id": job.get("prompt_id"),
+                "target_model_id": job.get("target_model_id"),
+            }
+        )
+    if structure_degraded:
+        recommendations.append(
+            "Structure-aware compression partially failed. Review summarized context "
+            "for missing citations or symbol headers."
+        )
+
     successful_stage1 = 0
     successful_drafts = 0
     expected_drafts = 0
@@ -301,6 +324,9 @@ def _format_issue_line(issue: Dict[str, Any]) -> str:
         target = (issue.get("target_model_id") or "?").split("/")[-1]
         outcome = issue.get("outcome") or "failed"
         return f"- summarize_failure: {target} ({outcome})"
+    if code == "structure_not_preserved":
+        target = (issue.get("target_model_id") or "?").split("/")[-1]
+        return f"- structure_not_preserved: {target} (citations footered)"
     if message := issue.get("message"):
         return f"- {code}: {message}"
 

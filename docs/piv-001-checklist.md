@@ -44,22 +44,22 @@ See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). **Remediated
 **Design doc:** [`dec-018-catalog-config-summarizer.md`](dec-018-catalog-config-summarizer.md)
 
 ### Config & catalog
-- [ ] `arena_config.yaml` + `model_catalog.yaml` (Pydantic + FREEZE loader — one read per PID)
-- [ ] OpenRouter catalog refresh → registered limits; tag modifiers (`free`, extensible)
-- [ ] Observation store: pending / accepted / archived tables; 10% delta gate; 60-day re-verify
-- [ ] CLI/MCP: `catalog refresh`, `catalog effective-limits`, `config validate`, plan-selection observation warnings
+- [x] `arena_config.yaml` + `model_catalog.yaml` (Pydantic + FREEZE loader — one read per PID)
+- [x] OpenRouter catalog refresh → registered limits; tag modifiers (`free`, extensible)
+- [x] Observation store: pending / accepted / archived tables; 10% delta gate; 60-day re-verify
+- [x] CLI/MCP: `catalog refresh`, `catalog effective-limits`, `config validate`, plan-selection observation warnings
 
 ### Summarizer & budget
-- [ ] `summarizer_model` + chairman fallback log; `SummarizeJob` metadata
-- [ ] Per-model threshold summarize; pool concurrency `len(arena)-1`
-- [ ] `PromptComponentBudget` + `BudgetDecision` per turn (rag/system/mode/turn/user)
-- [ ] RAG pre-cap (modest default chunk count); AST-boundary merge before summarize
-- [ ] Summarizer modes: `context.rag`, `context.user`, `mid_turn.semantic` (distinct `prompt_id`s)
-- [ ] Prompt registry + API/MCP expose; wire metrics counters (DEF-006 instrumentation only)
+- [x] `summarizer_model` + chairman fallback log; `SummarizeJob` metadata
+- [x] Per-model threshold summarize; pool concurrency `len(arena)-1`
+- [x] `PromptComponentBudget` + `BudgetDecision` per turn (rag/system/mode/turn/user)
+- [x] RAG pre-cap (modest default chunk count); AST-boundary merge before summarize
+- [x] Summarizer modes: `context.rag`, `context.user`, `mid_turn.semantic` (distinct `prompt_id`s)
+- [x] Prompt registry + API/MCP expose; wire metrics counters (DEF-006 instrumentation only)
 
 ### Quality (extend DEC-017)
 - [x] `execution_quality` + `agent_notice` on API/MCP
-- [ ] Attach summarize failures, budget decisions, observation flags to `execution_quality`
+- [x] Attach summarize failures, budget decisions, observation flags to `execution_quality`
 
 **Defers:** `DEF-005` synthesis model · `DEF-006` Prom stack · `DEF-007` Graph+N · `DEF-008` UI catalog editor · `DEF-009` ContentChecker OSS
 

@@ -19,6 +19,7 @@ from .config import (
 )
 from .frozen_config.catalog import CatalogLimitResolver
 from .rag_lmstudio import _estimate_tokens
+from .prompts import render_prompt
 from .summarizer import SummarizerService
 from .summarizer_pool import summarize_targets_parallel
 
@@ -155,6 +156,66 @@ async def summarize_context_for_budget(
     )
 
 
+async def summarize_user_for_budget(
+    user_content: str,
+    target_tokens: int,
+    query_model_fn: Callable,
+    chairman_model: str = CHAIRMAN_MODEL,
+    target_model_id: str = "__shared__",
+    summarizer: Optional[SummarizerService] = None,
+) -> Tuple[str, SummarizeJob]:
+    """Compress user input alone via SummarizerService."""
+    service = summarizer or SummarizerService(query_model_fn, chairman_model=chairman_model)
+    return await service.summarize_user(
+        user_content=user_content,
+        target_tokens=target_tokens,
+        target_model_id=target_model_id,
+    )
+
+
+async def maybe_compress_mid_turn(
+    *,
+    user_query: str,
+    responses_text: str,
+    arena_models: List[str],
+    query_model_fn: Callable,
+    chairman_model: str = CHAIRMAN_MODEL,
+    budget_override: Optional[int] = None,
+    summarizer: Optional[SummarizerService] = None,
+    allocator: Optional[BudgetAllocator] = None,
+) -> Tuple[str, List[SummarizeJob]]:
+    """Compress between-stage responses when the ranking prompt exceeds squad budget."""
+    models = arena_models or ARENA_MODELS
+    if allocator is None:
+        from .dependencies import get_budget_allocator
+
+        allocator = get_budget_allocator()
+    summarizer = summarizer or SummarizerService(query_model_fn, chairman_model=chairman_model)
+
+    ranking_prompt = render_prompt(
+        "council.rank",
+        user_query=user_query,
+        responses_text=responses_text,
+    )
+    prompt_tokens = _estimate_tokens(ranking_prompt)
+    min_budget = allocator.get_minimum_budget(models, budget_override)
+    if min_budget <= 0 or prompt_tokens <= min_budget:
+        return responses_text, []
+
+    shell_tokens = _estimate_tokens(
+        render_prompt("council.rank", user_query=user_query, responses_text="")
+    )
+    target_tokens = max(500, min_budget - shell_tokens - 200)
+    representative = models[0]
+    compressed, job = await summarizer.summarize_semantic(
+        user_query=user_query,
+        responses_text=responses_text,
+        target_tokens=target_tokens,
+        target_model_id=representative,
+    )
+    return (compressed or responses_text), [job]
+
+
 async def build_budgeted_prompts(
     user_content: str,
     context_block: str,
@@ -205,10 +266,65 @@ async def build_budgeted_prompts(
     )
 
     empty_meta: Tuple[Dict[str, BudgetDecision], List[SummarizeJob]] = ({}, [])
-    if not context_block:
-        return base_prompt, {}, {}, {}, *empty_meta
 
     base_tokens = _estimate_tokens(base_prompt)
+    tail_tokens = _estimate_tokens(tail) if tail else 0
+
+    if not context_block:
+        min_budget = allocator.get_minimum_budget(models, budget_override)
+        needs_user_compress = force_summarize or (
+            min_budget > 0 and base_tokens > min_budget
+        )
+        if not needs_user_compress:
+            return base_prompt, {}, {}, {}, *empty_meta
+
+        target_user_tokens = max(200, min_budget - tail_tokens - 100)
+        summarize_targets: Dict[str, int] = {model: target_user_tokens for model in models}
+        compressed_user, job = await summarize_user_for_budget(
+            user_content,
+            target_user_tokens,
+            query_model_fn,
+            chairman_model,
+            target_model_id=models[0],
+            summarizer=summarizer,
+        )
+        compressed_user = compressed_user or user_content
+        base_prompt = f"{compressed_user}{tail}"
+
+        budget_decisions: Dict[str, BudgetDecision] = {}
+        for model in models:
+            breakdown = resolver.breakdown(model, budget_override=budget_override)
+            alloc = allocator.calculate_budget(model, budget_override)
+            components = compute_prompt_components(
+                compressed_context="",
+                control_prompt="",
+                user_content=compressed_user,
+                directive_instructions=directive_instructions,
+                mode_instructions=mode_instructions,
+                rag_used=False,
+                estimate_fn=_estimate_tokens,
+            )
+            budget_decisions[model] = BudgetDecision(
+                model_id=model,
+                registered_limit=breakdown.registered_limit,
+                effective_limit=breakdown.effective_limit,
+                available_tokens=alloc.available_tokens,
+                tag_modifier=breakdown.tag_modifier,
+                model_modifier=breakdown.model_modifier,
+                summarized=True,
+                components=components,
+                tags=list(breakdown.tags),
+                budget_override=budget_override,
+            )
+
+        return (
+            base_prompt,
+            {},
+            {},
+            summarize_targets,
+            budget_decisions,
+            [job],
+        )
     per_model_prompts: Dict[str, str] = {}
     context_token_map: Dict[str, int] = {"__base__": _estimate_tokens(context_block)}
     summarize_targets: Dict[str, int] = {}

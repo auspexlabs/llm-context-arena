@@ -204,8 +204,10 @@ async def run_turn(
         metadata["budget_decisions"] = {
             mid: d.to_dict() for mid, d in ctx.budget_decisions.items()
         }
-    if ctx.summarize_jobs:
-        metadata["summarize_jobs"] = [j.to_dict() for j in ctx.summarize_jobs]
+    summarize_jobs = [j.to_dict() for j in ctx.summarize_jobs]
+    summarize_jobs.extend(metadata.get("summarize_jobs") or [])
+    if summarize_jobs:
+        metadata["summarize_jobs"] = summarize_jobs
 
     try:
         from .observations import get_observation_service

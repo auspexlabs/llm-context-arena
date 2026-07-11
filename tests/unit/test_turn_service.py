@@ -107,6 +107,7 @@ class TestTurnService:
                 return_value=(
                     [{"model": "m1", "ranking": "1. Response A", "parsed_ranking": ["A"]}],
                     {"Response A": "m1"},
+                    [],
                 )
             ),
         )

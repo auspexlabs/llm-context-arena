@@ -9,6 +9,8 @@ from .openrouter import (
     is_usable_response,
     failure_record,
 )
+from .budget import maybe_compress_mid_turn
+from .budget_metadata import SummarizeJob
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
 from .cost_tracking import apply_usage_fields, sum_usage_fields, summarize_turn_cost
 from .prompts import render_prompt
@@ -175,7 +177,10 @@ async def stage2_collect_rankings(
     stage1_results: List[Dict[str, Any]],
     arena_models: Optional[List[str]] = None,
     model_failures: Optional[List[Dict[str, Any]]] = None,
-) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    query_model_fn: Optional[Callable] = None,
+    chairman_model: str = CHAIRMAN_MODEL,
+    budget_override: Optional[int] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[SummarizeJob]]:
     """
     Stage 2: Each model ranks the anonymized responses.
 
@@ -200,6 +205,17 @@ async def stage2_collect_rankings(
         f"Response {label}:\n{result['response']}"
         for label, result in zip(labels, stage1_results)
     ])
+
+    mid_turn_jobs: List[SummarizeJob] = []
+    if query_model_fn is not None:
+        responses_text, mid_turn_jobs = await maybe_compress_mid_turn(
+            user_query=user_query,
+            responses_text=responses_text,
+            arena_models=arena_models or ARENA_MODELS,
+            query_model_fn=query_model_fn,
+            chairman_model=chairman_model,
+            budget_override=budget_override,
+        )
 
     ranking_prompt = render_prompt(
         "council.rank",
@@ -234,7 +250,7 @@ async def stage2_collect_rankings(
                 failure_record(model, response, stage="stage2", role="rankings")
             )
 
-    return stage2_results, label_to_model
+    return stage2_results, label_to_model, mid_turn_jobs
 
 
 async def stage3_synthesize_final(
@@ -521,8 +537,12 @@ async def run_mode_council(
             "response": "All models failed to respond. Please try again."
         }, {"mode": "council", "model_failures": model_failures}
 
-    stage2_results, label_to_model = await stage2_collect_rankings(
-        user_query, stage1_results, models, model_failures=model_failures
+    stage2_results, label_to_model, mid_turn_jobs = await stage2_collect_rankings(
+        user_query,
+        stage1_results,
+        models,
+        model_failures=model_failures,
+        query_model_fn=query_model,
     )
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
@@ -564,6 +584,8 @@ async def run_mode_council(
         "cost": summarize_turn_cost(steps),
         "model_failures": model_failures,
     }
+    if mid_turn_jobs:
+        metadata["summarize_jobs"] = [j.to_dict() for j in mid_turn_jobs]
     return stage1_results, stage2_results, stage3_result, metadata
 
 
