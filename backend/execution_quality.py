@@ -1,0 +1,283 @@
+"""Assess whether an arena turn is agent-acceptable or materially degraded."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+
+def _has_content(text: Any) -> bool:
+    return bool(str(text or "").strip())
+
+
+def _draft_steps(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [s for s in steps if str(s.get("role") or "").startswith("draft_")]
+
+
+def _steps_with_role_prefix(steps: List[Dict[str, Any]], prefix: str) -> List[Dict[str, Any]]:
+    return [s for s in steps if str(s.get("role") or "").startswith(prefix)]
+
+
+def assess_execution_quality(
+    *,
+    mode: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    stage1: Optional[List[Dict[str, Any]]] = None,
+    stage2: Optional[List[Dict[str, Any]]] = None,
+    stage3: Optional[Dict[str, Any]] = None,
+    arena_models: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Return structured quality for agents and MCP consumers.
+
+    acceptable=False means the agent should not present the result as a successful
+    multi-model deliberation without user disclosure and/or retry.
+    """
+    meta = metadata or {}
+    mode_key = (mode or meta.get("mode") or "council").lower()
+    models = arena_models or meta.get("arena_models") or []
+    failures = list(meta.get("model_failures") or [])
+    steps = list(meta.get("steps") or [])
+    issues: List[Dict[str, Any]] = []
+    recommendations: List[str] = []
+
+    for failure in failures:
+        issues.append(
+            {
+                "code": "model_failure",
+                "model": failure.get("model"),
+                "status": failure.get("status"),
+                "message": failure.get("message"),
+                "provider": failure.get("provider"),
+                "stage": failure.get("stage") or failure.get("role"),
+            }
+        )
+
+    stage3_resp = (stage3 or {}).get("response", "")
+    if not _has_content(stage3_resp):
+        issues.append(
+            {
+                "code": "empty_final",
+                "message": "Chairman produced no usable final answer.",
+            }
+        )
+        recommendations.append(
+            "Retry with a different chairman model, @tokenbudget, or fewer arena models."
+        )
+
+    summarize_targets = meta.get("summarize_targets") or {}
+    if summarize_targets:
+        issues.append(
+            {
+                "code": "context_compressed",
+                "message": "RAG context was chairman-summarized to fit token budget.",
+                "targets": summarize_targets,
+            }
+        )
+
+    successful_stage1 = 0
+    successful_drafts = 0
+    expected_drafts = 0
+
+    if mode_key == "round_robin":
+        drafts = _draft_steps(steps)
+        expected_drafts = len(drafts) or len(models)
+        successful_drafts = sum(1 for s in drafts if _has_content(s.get("response")))
+        failed_drafts = max(0, len(drafts) - successful_drafts)
+        if failed_drafts:
+            issues.append(
+                {
+                    "code": "empty_draft_responses",
+                    "failed": failed_drafts,
+                    "expected": len(drafts),
+                    "succeeded": successful_drafts,
+                }
+            )
+        if successful_drafts == 0 and expected_drafts > 0:
+            recommendations.append(
+                "All round-robin draft models failed. Retry with @tokenbudget 8000, "
+                "paid models, or a smaller squad."
+            )
+        elif successful_drafts == 1 and len(drafts) > 1:
+            issues.append(
+                {
+                    "code": "rr_chain_degraded",
+                    "message": (
+                        "Only one model produced a draft; the round-robin refinement "
+                        "chain did not run."
+                    ),
+                    "succeeded": 1,
+                    "expected": len(drafts),
+                }
+            )
+            recommendations.append(
+                "Do not present as multi-model deliberation. Inform the user and "
+                "retry with reliable models or @tokenbudget."
+            )
+        elif failed_drafts:
+            recommendations.append(
+                f"{failed_drafts} draft model(s) failed. Check model_failures; "
+                "consider paid models or OpenRouter privacy settings."
+            )
+
+    elif mode_key == "council":
+        s1 = stage1 or []
+        successful_stage1 = sum(1 for r in s1 if _has_content(r.get("response")))
+        expected = len(models) or len(s1)
+        if successful_stage1 < 2 and expected >= 2:
+            issues.append(
+                {
+                    "code": "council_degraded",
+                    "succeeded": successful_stage1,
+                    "expected": expected,
+                    "message": "Too few council answers for meaningful peer review.",
+                }
+            )
+            recommendations.append(
+                "Council had insufficient successful answers. Retry or shrink the squad."
+            )
+        failed_s2 = sum(1 for r in (stage2 or []) if not _has_content(r.get("ranking")))
+        if failed_s2:
+            issues.append(
+                {
+                    "code": "empty_rankings",
+                    "failed": failed_s2,
+                    "expected": len(stage2 or []),
+                }
+            )
+
+    elif mode_key == "fight":
+        for role_prefix, label in (
+            ("answer_", "answers"),
+            ("critique_", "critiques"),
+            ("defense_", "defenses"),
+        ):
+            role_steps = _steps_with_role_prefix(steps, role_prefix)
+            if not role_steps:
+                continue
+            empty = sum(1 for s in role_steps if not _has_content(s.get("response")))
+            if empty:
+                issues.append(
+                    {
+                        "code": f"empty_{label}",
+                        "failed": empty,
+                        "expected": len(role_steps),
+                    }
+                )
+        if failures:
+            recommendations.append(
+                "Fight mode had model failures. Surface errors to the user before "
+                "trusting adversarial synthesis."
+            )
+
+    elif steps:
+        empty_steps = sum(1 for s in steps if not _has_content(s.get("response")))
+        if empty_steps:
+            issues.append(
+                {
+                    "code": "empty_step_responses",
+                    "failed": empty_steps,
+                    "expected": len(steps),
+                }
+            )
+
+    if failures and not recommendations:
+        recommendations.append(
+            "Model failures occurred. Read metadata.model_failures and retry or "
+            "inform the user — do not silently accept partial deliberation."
+        )
+
+    blocking_codes = {
+        "empty_final",
+        "empty_draft_responses",
+        "rr_chain_degraded",
+        "council_degraded",
+        "empty_rankings",
+        "empty_answers",
+        "empty_critiques",
+        "empty_defenses",
+        "empty_step_responses",
+    }
+    has_blocking = any(i.get("code") in blocking_codes for i in issues)
+    has_failures = bool(failures)
+
+    if not _has_content(stage3_resp):
+        severity = "failed"
+        acceptable = False
+    elif mode_key == "round_robin" and successful_drafts == 0 and expected_drafts > 0:
+        severity = "failed"
+        acceptable = False
+    elif has_failures or has_blocking:
+        severity = "degraded"
+        acceptable = False
+    else:
+        severity = "ok"
+        acceptable = True
+
+    return {
+        "acceptable": acceptable,
+        "severity": severity,
+        "mode": mode_key,
+        "issues": issues,
+        "recommendations": recommendations,
+        "stats": {
+            "model_failures": len(failures),
+            "arena_models": len(models),
+            "successful_stage1": successful_stage1,
+            "successful_drafts": successful_drafts,
+            "expected_drafts": expected_drafts,
+            "has_final_answer": _has_content(stage3_resp),
+        },
+    }
+
+
+def assess_from_response_dict(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Assess quality from a send_message / run_turn API payload."""
+    meta = payload.get("metadata") or {}
+    return assess_execution_quality(
+        mode=meta.get("mode") or payload.get("mode") or "council",
+        metadata=meta,
+        stage1=payload.get("stage1"),
+        stage2=payload.get("stage2"),
+        stage3=payload.get("stage3"),
+        arena_models=meta.get("arena_models"),
+    )
+
+
+def format_agent_notice(quality: Dict[str, Any]) -> str:
+    """Human/agent-readable banner when execution is not acceptable."""
+    if quality.get("acceptable"):
+        return ""
+
+    severity = (quality.get("severity") or "degraded").upper()
+    lines = [
+        f"EXECUTION {severity} — do not treat this turn as a successful full deliberation.",
+        "",
+        "Issues:",
+    ]
+    for issue in quality.get("issues") or []:
+        code = issue.get("code", "issue")
+        if code == "model_failure":
+            model = (issue.get("model") or "?").split("/")[-1]
+            status = issue.get("status")
+            msg = (issue.get("message") or "")[:120]
+            lines.append(f"- model_failure: {model} (HTTP {status}) — {msg}")
+        elif code == "context_compressed":
+            lines.append("- context was chairman-summarized for token budget")
+        else:
+            msg = issue.get("message") or issue
+            lines.append(f"- {code}: {msg}")
+
+    recs = quality.get("recommendations") or []
+    if recs:
+        lines.extend(["", "Recommendations:"])
+        for rec in recs:
+            lines.append(f"- {rec}")
+
+    lines.extend(
+        [
+            "",
+            "execution_quality.acceptable is false — inform the user and consider retry "
+            "(@tokenbudget, different models, or OpenRouter privacy settings).",
+        ]
+    )
+    return "\n".join(lines)

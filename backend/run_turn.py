@@ -19,6 +19,7 @@ from .models import (
     Stage2Result,
     Stage3Result,
 )
+from .execution_quality import assess_from_response_dict
 from .storage import reset_conversation
 from .storage_service import StorageService
 
@@ -107,6 +108,7 @@ def _assistant_metadata(
         "cost": metadata.get("cost"),
         "context_from_last_chair": ctx.context_from_last_chair,
         "model_failures": metadata.get("model_failures") or [],
+        "summarize_targets": metadata.get("summarize_targets") or {},
     }
 
 
@@ -194,6 +196,8 @@ async def run_turn(
     metadata["warnings"] = list(ctx.warnings or [])
     metadata["mode"] = mode
     metadata["context_from_last_chair"] = ctx.context_from_last_chair
+    if ctx.summarize_targets:
+        metadata["summarize_targets"] = ctx.summarize_targets
 
     execution = build_arena_execution(
         conversation_id=conversation_id,
@@ -208,6 +212,7 @@ async def run_turn(
     )
     response_dict = execution.to_response_dict()
     response_dict["warnings"] = list(ctx.warnings or [])
+    response_dict["execution_quality"] = assess_from_response_dict(response_dict)
 
     if save_assistant:
         if title_task:
