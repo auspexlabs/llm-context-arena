@@ -8,7 +8,11 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from backend.catalog_refresh import refresh_catalog, validate_frozen_config
+from backend.dependencies import load_runtime_settings
+from backend.observations import get_observation_service
 from backend.prompts import get_prompt, list_prompts
+from backend.squad_presets import load_squad_preset
 
 from .client import ArenaClient
 from .quality import enrich_turn_payload, enrich_turn_record
@@ -232,6 +236,60 @@ async def get_system_prompt(prompt_id: str) -> str:
             "template": entry.template,
         }
     )
+
+
+@mcp.tool()
+async def catalog_refresh(force: bool = False, dry_run: bool = False) -> str:
+    """Pull OpenRouter registered limits into model_catalog.yaml."""
+    return _json(await refresh_catalog(force=force, dry_run=dry_run))
+
+
+@mcp.tool()
+async def catalog_effective_limits(squad: Optional[str] = None) -> str:
+    """Show effective limits and pending observations for a squad or current settings."""
+    if squad:
+        preset = load_squad_preset(squad)
+        model_ids = list(preset["arena_models"])
+        squad_name = squad
+    else:
+        settings = load_runtime_settings()
+        model_ids = list(settings.get("arena_models") or [])
+        squad_name = settings.get("arena_squad")
+    return _json(get_observation_service().effective_limits_report(model_ids, squad_name=squad_name))
+
+
+@mcp.tool()
+async def list_pending_observations(squad: Optional[str] = None) -> str:
+    """List pending limit observations awaiting user acceptance."""
+    model_ids: List[str] = []
+    if squad:
+        preset = load_squad_preset(squad)
+        model_ids = list(preset["arena_models"])
+    pending = get_observation_service().pending_for_models(model_ids)
+    return _json({"pending": [p.to_dict() for p in pending], "count": len(pending)})
+
+
+@mcp.tool()
+async def accept_observation(observation_id: int) -> str:
+    """Accept a pending limit observation — promotes to live observed_limit."""
+    accepted = get_observation_service().accept(observation_id)
+    if accepted is None:
+        return _json({"ok": False, "error": f"Pending observation {observation_id} not found"})
+    return _json({"ok": True, "observation": accepted.to_dict()})
+
+
+@mcp.tool()
+async def decline_observation(observation_id: int) -> str:
+    """Decline a pending limit observation."""
+    ok = get_observation_service().decline(observation_id)
+    return _json({"ok": ok})
+
+
+@mcp.tool()
+async def config_validate() -> str:
+    """Validate arena_config.yaml and model_catalog.yaml against frozen schemas."""
+    ok, issues = validate_frozen_config()
+    return _json({"ok": ok, "issues": issues})
 
 
 @mcp.tool()

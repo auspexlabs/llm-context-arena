@@ -11,6 +11,7 @@ from .config import CHAIRMAN_MODEL
 from .frozen_config import get_frozen_snapshot
 from .prompts import render_prompt
 from .rag_lmstudio import _estimate_tokens
+from .structure_wrap import restore_after_summarize, wrap_for_summarize
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,11 @@ class SummarizerService:
                 outcome="ok" if content.strip() else "empty",
             )
 
+        wrapped_context, structure_spans = wrap_for_summarize(context_block)
         prompt = render_prompt(
             prompt_id,
             user_question=user_question,
-            context_block=context_block,
+            context_block=wrapped_context,
             target_tokens=target_tokens,
         )
         model, chairman_fallback = self._resolve_model()
@@ -95,7 +97,8 @@ class SummarizerService:
         outcome = "failed"
         output_tokens = 0
         if resp and not resp.get("_failed"):
-            content = str(resp.get("content") or "")
+            raw_content = str(resp.get("content") or "")
+            content, _ = restore_after_summarize(raw_content, structure_spans)
             outcome = "ok" if content.strip() else "empty"
             usage = resp.get("usage") or {}
             if usage.get("prompt_tokens"):

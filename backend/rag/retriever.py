@@ -252,9 +252,11 @@ class CodeRetriever:
             return []
 
         route = self._resolve_route(query)
+        from .pre_cap import apply_ast_aware_cap
+
         ranked = self.retrieve_post_rerank_pre_graph(query, top_k=self.rerank_top_k)
         ranked = self._expand_graph(ranked, query, route)
-        return ranked[: self.context_chunk_cap]
+        return apply_ast_aware_cap(ranked, self.context_chunk_cap)
 
     def retrieve(self, query: str) -> Tuple[str, List[dict], float]:
         start = time.monotonic()

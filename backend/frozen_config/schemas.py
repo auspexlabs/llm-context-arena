@@ -49,6 +49,8 @@ class ModelEntry(BaseModel):
 
     tags: List[str] = Field(default_factory=list)
     registered_limit: Optional[int] = None
+    observed_limit: Optional[int] = None
+    observed_accepted_at: Optional[str] = None
     model_modifier: float = 1.0
     manual_override_limit: Optional[int] = None
     provenance: str = "manual"
