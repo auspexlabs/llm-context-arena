@@ -4,7 +4,7 @@ import pytest
 
 from backend.frozen_config import clear_frozen_cache
 from backend.observations.service import ObservationService
-from backend.observations.store import ObservationStore
+from backend.observations.store import ObservationStore, _utcnow
 
 
 @pytest.fixture
@@ -161,3 +161,40 @@ class TestObservationSweep:
         result = obs_service.sweep_expired_observations()
         assert result["archived_count"] == 0
         assert result["reverify_required"] == []
+
+    def test_archive_skips_reaccepted_row(self, obs_store):
+        from datetime import datetime, timedelta, timezone
+
+        pending = obs_store.propose(
+            model_id="m/race",
+            registered_limit=100000,
+            observed_limit=50000,
+        )
+        obs_store.accept(pending.id, ttl_days=60)
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        with obs_store._connect() as conn:
+            conn.execute(
+                "UPDATE observation_accepted SET expires_at = ? WHERE model_id = ?",
+                (past, "m/race"),
+            )
+
+        obs_store.archive_expired_accepted()
+        future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        pending2 = obs_store.propose(
+            model_id="m/race",
+            registered_limit=100000,
+            observed_limit=48000,
+        )
+        with obs_store._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO observation_accepted
+                (model_id, observed_limit, registered_limit, accepted_at, expires_at, source_pending_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                ("m/race", 48000, 100000, _utcnow(), future, pending2.id),
+            )
+
+        archived = obs_store.archive_expired_accepted()
+        assert archived == []
+        assert obs_store.get_accepted("m/race") is not None
