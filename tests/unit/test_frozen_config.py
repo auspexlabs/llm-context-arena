@@ -1,6 +1,7 @@
 """Unit tests for DEC-018 frozen config loader."""
 
 import pytest
+from pydantic import ValidationError
 
 from backend.dependencies import clear_caches, get_budget_allocator
 from backend.frozen_config import clear_frozen_cache, get_frozen_snapshot
@@ -35,6 +36,17 @@ class TestFrozenSnapshot:
         clear_frozen_cache()
         snap2 = get_frozen_snapshot()
         assert snap2.generation > snap1.generation
+
+    def test_nested_models_are_frozen(self):
+        snap = get_frozen_snapshot()
+        with pytest.raises(ValidationError):
+            snap.arena.context.safety_margin = 0.9  # type: ignore[misc]
+
+    def test_clear_frozen_cache_alone_refreshes_budget_allocator(self):
+        allocator_before = get_budget_allocator()
+        clear_frozen_cache()
+        allocator_after = get_budget_allocator()
+        assert allocator_before is not allocator_after
 
 
 class TestCatalogLimitResolver:

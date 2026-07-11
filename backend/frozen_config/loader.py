@@ -13,8 +13,9 @@ from .schemas import ArenaConfig, FrozenSnapshot, ModelCatalog
 
 logger = logging.getLogger(__name__)
 
-ARENA_CONFIG_PATH = Path("data/arena_config.yaml")
-MODEL_CATALOG_PATH = Path("data/model_catalog.yaml")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+ARENA_CONFIG_PATH = _PROJECT_ROOT / "data" / "arena_config.yaml"
+MODEL_CATALOG_PATH = _PROJECT_ROOT / "data" / "model_catalog.yaml"
 
 _GENERATION = 0
 
@@ -54,5 +55,11 @@ def get_frozen_snapshot(
 
 
 def clear_frozen_cache() -> None:
-    """Clear cached snapshot (testing / forced reload requires new process)."""
+    """Clear cached snapshot and dependent budget allocator cache."""
     get_frozen_snapshot.cache_clear()
+    try:
+        from ..dependencies import get_budget_allocator
+
+        get_budget_allocator.cache_clear()
+    except Exception:
+        pass

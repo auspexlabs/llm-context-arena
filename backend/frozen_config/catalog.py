@@ -110,6 +110,6 @@ class CatalogLimitResolver:
         }
         from ..config import MODEL_CONTEXT_LIMITS
 
-        for mid, limit in MODEL_CONTEXT_LIMITS.items():
+        for mid in MODEL_CONTEXT_LIMITS:
             limits.setdefault(mid, self.effective_limit(mid))
         return limits

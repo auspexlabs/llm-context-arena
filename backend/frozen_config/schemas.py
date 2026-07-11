@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+_FROZEN = ConfigDict(frozen=True)
 
 
 class ContextBudgetConfig(BaseModel):
+    model_config = _FROZEN
+
     safety_margin: float = 0.85
     output_token_allowance: int = 4000
     default_registered_limit: int = 131072
@@ -15,18 +19,24 @@ class ContextBudgetConfig(BaseModel):
 
 
 class SummarizerConfig(BaseModel):
+    model_config = _FROZEN
+
     model: Optional[str] = None
     concurrency: Optional[int] = None
     chairman_fallback: bool = True
 
 
 class CatalogPolicyConfig(BaseModel):
+    model_config = _FROZEN
+
     refresh_ttl_hours: int = 168
     observation_delta_threshold: float = 0.10
     observation_ttl_days: int = 60
 
 
 class ArenaConfig(BaseModel):
+    model_config = _FROZEN
+
     version: int = 1
     context: ContextBudgetConfig = Field(default_factory=ContextBudgetConfig)
     summarizer: SummarizerConfig = Field(default_factory=SummarizerConfig)
@@ -35,6 +45,8 @@ class ArenaConfig(BaseModel):
 
 
 class ModelEntry(BaseModel):
+    model_config = _FROZEN
+
     tags: List[str] = Field(default_factory=list)
     registered_limit: Optional[int] = None
     model_modifier: float = 1.0
@@ -43,6 +55,8 @@ class ModelEntry(BaseModel):
 
 
 class ModelCatalog(BaseModel):
+    model_config = _FROZEN
+
     version: int = 1
     models: Dict[str, ModelEntry] = Field(default_factory=dict)
 
@@ -50,7 +64,7 @@ class ModelCatalog(BaseModel):
 class FrozenSnapshot(BaseModel):
     """Immutable config snapshot for the current process."""
 
-    model_config = {"frozen": True}
+    model_config = _FROZEN
 
     arena: ArenaConfig
     catalog: ModelCatalog
