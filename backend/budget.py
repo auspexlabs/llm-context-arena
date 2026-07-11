@@ -15,6 +15,7 @@ from .config import (
     OUTPUT_TOKEN_ALLOWANCE,
     CHAIRMAN_MODEL,
 )
+from .prompts import render_prompt
 from .rag_lmstudio import _estimate_tokens
 
 
@@ -151,13 +152,11 @@ async def summarize_context_for_budget(
     Returns:
         Compressed context string
     """
-    prompt = (
-        "You are the Chairman of an LLM arena. Summarize the provided context so it can be fed to"
-        " another model with a smaller input window. Keep critical facts, constraints, and code/API"
-        " signatures. Prefer bullet points. Include source hints (filenames/sections) when present."
-        f" Fit the context portion into roughly {target_tokens} tokens or less. Do not omit key safety"
-        " constraints or numbers. Return only the compressed context, not an answer."
-        f"\n\nUser question:\n{user_question}\n\nContext to compress:\n{context_block}"
+    prompt = render_prompt(
+        "context.summarize.rag",
+        user_question=user_question,
+        context_block=context_block,
+        target_tokens=target_tokens,
     )
 
     resp = await query_model_fn(

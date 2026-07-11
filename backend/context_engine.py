@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .budget import BudgetAllocator, build_budgeted_prompts
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
+from .prompts import render_prompt
 from .directives import (
     ParsedDirectives,
     build_directive_instructions,
@@ -23,11 +24,7 @@ from .rag_provider import RAGProvider
 logger = logging.getLogger(__name__)
 
 
-CONTROL_PROMPT = (
-    "\n\n# Retrieval guidance\n"
-    "If the provided context seems incomplete or missing related files or functions, "
-    "explicitly say what seems missing (by filename or concept) and ask the user to provide it."
-)
+CONTROL_PROMPT = render_prompt("rag.control")
 
 
 def get_last_chair_context(conversation: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]], Optional[str]]:

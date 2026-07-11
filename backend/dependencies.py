@@ -13,10 +13,8 @@ from .config import (
     ARENA_MODELS,
     ARENA_SQUAD,
     CHAIRMAN_MODEL,
-    CONTEXT_SAFETY_MARGIN,
-    MODEL_CONTEXT_LIMITS,
-    OUTPUT_TOKEN_ALLOWANCE,
 )
+from .frozen_config import CatalogLimitResolver, clear_frozen_cache, get_frozen_snapshot
 from .squad_presets import list_squad_summaries, load_squad_preset
 from .openrouter import query_model
 from .rag_lmstudio_provider import LMStudioRAGProvider, get_rag_provider
@@ -103,11 +101,14 @@ def get_storage_service() -> StorageService:
 
 @lru_cache()
 def get_budget_allocator() -> BudgetAllocator:
-    """Get singleton budget allocator instance."""
+    """Get singleton budget allocator backed by frozen catalog limits."""
+    snapshot = get_frozen_snapshot()
+    resolver = CatalogLimitResolver(snapshot)
+    ctx = snapshot.arena.context
     return BudgetAllocator(
-        context_limits=MODEL_CONTEXT_LIMITS,
-        safety_margin=CONTEXT_SAFETY_MARGIN,
-        output_allowance=OUTPUT_TOKEN_ALLOWANCE,
+        context_limits=resolver.build_context_limits(),
+        safety_margin=ctx.safety_margin,
+        output_allowance=ctx.output_token_allowance,
     )
 
 
@@ -148,3 +149,4 @@ def clear_caches():
     get_storage_service.cache_clear()
     get_budget_allocator.cache_clear()
     get_rag_provider_dep.cache_clear()
+    clear_frozen_cache()
