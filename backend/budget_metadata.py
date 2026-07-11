@@ -38,9 +38,7 @@ class BudgetDecision:
     budget_override: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        data = asdict(self)
-        data["components"] = self.components.to_dict()
-        return data
+        return asdict(self)
 
 
 @dataclass

@@ -30,6 +30,30 @@ async def test_summarizer_chairman_fallback():
 
 
 @pytest.mark.asyncio
+async def test_summarizer_cache_miss_on_different_user_question():
+    calls = []
+
+    async def counting_query(model, messages, timeout=90.0):
+        calls.append(1)
+        return {"content": "compressed context", "usage": {}}
+
+    service = SummarizerService(counting_query, chairman_model="chair/test")
+    await service.summarize_rag(
+        user_question="auth?",
+        context_block="ctx",
+        target_tokens=100,
+        target_model_id="m1",
+    )
+    await service.summarize_rag(
+        user_question="errors?",
+        context_block="ctx",
+        target_tokens=100,
+        target_model_id="m1",
+    )
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_summarizer_cache_hit():
     service = SummarizerService(_fake_query, chairman_model="chair/test")
     await service.summarize_rag(

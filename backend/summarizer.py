@@ -35,7 +35,7 @@ class SummarizerService:
         self.chairman_fallback = (
             chairman_fallback if chairman_fallback is not None else cfg.chairman_fallback
         )
-        self._cache: Dict[tuple[str, int, str], str] = {}
+        self._cache: Dict[tuple[str, str, int, str], tuple[str, str, bool]] = {}
 
     def _resolve_model(self) -> tuple[str, bool]:
         if self.summarizer_model:
@@ -58,11 +58,10 @@ class SummarizerService:
         target_model_id: str,
         prompt_id: str = RAG_SUMMARIZE_PROMPT_ID,
     ) -> Tuple[str, SummarizeJob]:
-        cache_key = (context_block, target_tokens, prompt_id)
+        cache_key = (context_block, user_question, target_tokens, prompt_id)
         cache_hit = cache_key in self._cache
         if cache_hit:
-            content = self._cache[cache_key]
-            model, chairman_fallback = self._resolve_model()
+            content, model, chairman_fallback = self._cache[cache_key]
             return content, SummarizeJob(
                 prompt_id=prompt_id,
                 target_model_id=target_model_id,
@@ -104,7 +103,7 @@ class SummarizerService:
             output_tokens = int(usage.get("completion_tokens") or _estimate_tokens(content))
 
         if content.strip():
-            self._cache[cache_key] = content
+            self._cache[cache_key] = (content, model, chairman_fallback)
 
         job = SummarizeJob(
             prompt_id=prompt_id,
