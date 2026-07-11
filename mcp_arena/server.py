@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from backend.prompts import get_prompt, list_prompts
+
 from .client import ArenaClient
 from .quality import enrich_turn_payload, enrich_turn_record
 
@@ -205,6 +207,30 @@ async def get_message_execution(
         await _get_client().get_message_execution(
             conversation_id, message_index, include=include
         )
+    )
+
+
+@mcp.tool()
+async def list_system_prompts(mode: Optional[str] = None) -> str:
+    """List registered system prompts (metadata; no templates). Optional mode filter."""
+    return _json({"prompts": list_prompts(mode=mode)})
+
+
+@mcp.tool()
+async def get_system_prompt(prompt_id: str) -> str:
+    """Return one system prompt including template."""
+    entry = get_prompt(prompt_id)
+    if entry is None:
+        return _json({"error": f"Unknown prompt_id: {prompt_id}"})
+    return _json(
+        {
+            "prompt_id": entry.prompt_id,
+            "version": entry.version,
+            "mode": entry.mode,
+            "variables": list(entry.variables),
+            "description": entry.description,
+            "template": entry.template,
+        }
     )
 
 

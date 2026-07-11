@@ -1,0 +1,49 @@
+"""Tests for SummarizerService (DEC-018 A6)."""
+
+import pytest
+
+from backend.summarizer import SummarizerService
+
+
+async def _fake_query(model, messages, timeout=90.0):
+    return {
+        "content": "compressed context",
+        "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+    }
+
+
+@pytest.mark.asyncio
+async def test_summarizer_chairman_fallback():
+    service = SummarizerService(_fake_query, chairman_model="chair/test")
+    text, job = await service.summarize_rag(
+        user_question="What is X?",
+        context_block="long context",
+        target_tokens=500,
+        target_model_id="model/small",
+    )
+    assert text == "compressed context"
+    assert job.chairman_fallback is True
+    assert job.summarizer_model == "chair/test"
+    assert job.target_model_id == "model/small"
+    assert job.outcome == "ok"
+    assert job.cache_hit is False
+
+
+@pytest.mark.asyncio
+async def test_summarizer_cache_hit():
+    service = SummarizerService(_fake_query, chairman_model="chair/test")
+    await service.summarize_rag(
+        user_question="q",
+        context_block="ctx",
+        target_tokens=100,
+        target_model_id="m1",
+    )
+    text, job = await service.summarize_rag(
+        user_question="q",
+        context_block="ctx",
+        target_tokens=100,
+        target_model_id="m2",
+    )
+    assert text == "compressed context"
+    assert job.cache_hit is True
+    assert job.duration_ms == 0
