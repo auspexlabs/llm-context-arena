@@ -80,6 +80,43 @@ def test_agent_notice_formats_count_issues_without_raw_dict():
     assert "{" not in notice
 
 
+def test_execution_quality_includes_budget_and_summarize_fields():
+    quality = assess_execution_quality(
+        mode="council",
+        metadata={
+            "arena_models": ["a"],
+            "summarize_jobs": [
+                {
+                    "outcome": "failed",
+                    "prompt_id": "context.summarize.rag",
+                    "target_model_id": "model/small",
+                    "chairman_fallback": True,
+                    "cache_hit": False,
+                },
+                {
+                    "outcome": "ok",
+                    "prompt_id": "context.summarize.rag",
+                    "target_model_id": "model/big",
+                    "chairman_fallback": True,
+                    "cache_hit": False,
+                },
+            ],
+            "budget_decisions": {
+                "model/small": {"model_id": "model/small", "effective_limit": 64000},
+            },
+        },
+        stage3={"response": "final"},
+    )
+    assert len(quality["summarize_failures"]) == 1
+    assert quality["summarizer_used_chairman"] is True
+    assert len(quality["budget_decisions"]) == 1
+    assert quality["observation_pending"] == []
+    assert any(i["code"] == "summarize_failure" for i in quality["issues"])
+    assert any(i["code"] == "chairman_summarizer" for i in quality["issues"])
+    assert quality["acceptable"] is True
+    assert format_agent_notice(quality) == ""
+
+
 def test_assess_from_response_dict():
     payload = {
         "metadata": {

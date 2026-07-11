@@ -20,6 +20,7 @@ from .models import (
     Stage3Result,
 )
 from .execution_quality import assess_from_response_dict, format_agent_notice
+from .metrics import record_turn_metrics
 from .storage import reset_conversation
 from .storage_service import StorageService
 
@@ -220,6 +221,7 @@ async def run_turn(
     response_dict["warnings"] = list(ctx.warnings or [])
     quality = assess_from_response_dict(response_dict)
     response_dict["execution_quality"] = quality
+    record_turn_metrics(metadata=metadata, quality=quality)
     notice = format_agent_notice(quality)
     if notice:
         response_dict["agent_notice"] = notice
