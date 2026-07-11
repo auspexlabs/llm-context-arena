@@ -65,12 +65,45 @@ def assess_execution_quality(
         )
 
     summarize_targets = meta.get("summarize_targets") or {}
+    summarize_jobs = list(meta.get("summarize_jobs") or [])
+    summarize_failures = [
+        job for job in summarize_jobs if str(job.get("outcome") or "") not in {"ok", ""}
+    ]
+    summarizer_used_chairman = any(
+        job.get("chairman_fallback") and not job.get("cache_hit") for job in summarize_jobs
+    )
+
+    budget_raw = meta.get("budget_decisions") or {}
+    if isinstance(budget_raw, dict):
+        budget_decisions = list(budget_raw.values())
+    else:
+        budget_decisions = list(budget_raw)
+
+    observation_pending = list(meta.get("observation_pending") or [])
+
     if summarize_targets:
         issues.append(
             {
                 "code": "context_compressed",
                 "message": "RAG context was chairman-summarized to fit token budget.",
                 "targets": summarize_targets,
+            }
+        )
+    if summarizer_used_chairman:
+        issues.append(
+            {
+                "code": "chairman_summarizer",
+                "message": "Chairman model used as summarizer fallback (summarizer_model unset).",
+            }
+        )
+    for job in summarize_failures:
+        issues.append(
+            {
+                "code": "summarize_failure",
+                "message": f"Summarize job failed for {job.get('target_model_id', '?')}.",
+                "outcome": job.get("outcome"),
+                "prompt_id": job.get("prompt_id"),
+                "target_model_id": job.get("target_model_id"),
             }
         )
 
@@ -219,6 +252,10 @@ def assess_execution_quality(
         "mode": mode_key,
         "issues": issues,
         "recommendations": recommendations,
+        "summarize_failures": summarize_failures,
+        "budget_decisions": budget_decisions,
+        "observation_pending": observation_pending,
+        "summarizer_used_chairman": summarizer_used_chairman,
         "stats": {
             "model_failures": len(failures),
             "arena_models": len(models),
@@ -226,6 +263,8 @@ def assess_execution_quality(
             "successful_drafts": successful_drafts,
             "expected_drafts": expected_drafts,
             "has_final_answer": _has_content(stage3_resp),
+            "summarize_jobs": len(summarize_jobs),
+            "summarize_failures": len(summarize_failures),
         },
     }
 
@@ -253,6 +292,12 @@ def _format_issue_line(issue: Dict[str, Any]) -> str:
         return f"- model_failure: {model} (HTTP {status}) — {msg}"
     if code == "context_compressed":
         return "- context was chairman-summarized for token budget"
+    if code == "chairman_summarizer":
+        return "- chairman model used as summarizer fallback"
+    if code == "summarize_failure":
+        target = (issue.get("target_model_id") or "?").split("/")[-1]
+        outcome = issue.get("outcome") or "failed"
+        return f"- summarize_failure: {target} ({outcome})"
     if message := issue.get("message"):
         return f"- {code}: {message}"
 

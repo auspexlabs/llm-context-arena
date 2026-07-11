@@ -28,6 +28,7 @@ from .run_turn import run_turn
 from .routes.turns import router as turns_router
 from .routes.execution import router as execution_router
 from .routes.prompts import router as prompts_router
+from .routes.metrics import router as metrics_router
 from .dependencies import (
     get_context_engine,
     get_settings,
@@ -54,6 +55,7 @@ logger = logging.getLogger(__name__)
 app.include_router(turns_router)
 app.include_router(execution_router)
 app.include_router(prompts_router)
+app.include_router(metrics_router)
 
 # Enable CORS for local development
 app.add_middleware(
