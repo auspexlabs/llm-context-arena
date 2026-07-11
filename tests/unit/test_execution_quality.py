@@ -98,7 +98,7 @@ def test_execution_quality_includes_budget_and_summarize_fields():
                     "prompt_id": "context.summarize.rag",
                     "target_model_id": "model/big",
                     "chairman_fallback": True,
-                    "cache_hit": True,
+                    "cache_hit": False,
                 },
             ],
             "budget_decisions": {

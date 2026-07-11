@@ -53,6 +53,13 @@ def test_record_turn_metrics_increments_counters():
     assert "arena_config_freeze_generation" in body
 
 
+def test_label_values_are_escaped():
+    reset_metrics()
+    increment_counter("arena_turns_total", mode='coun"cil', quality_severity="ok")
+    body = render_prometheus()
+    assert 'mode="coun\\"cil"' in body
+
+
 def test_metrics_endpoint():
     reset_metrics()
     increment_counter("arena_turns_total", mode="council", quality_severity="ok")

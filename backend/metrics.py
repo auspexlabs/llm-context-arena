@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +16,7 @@ _GAUGES: Dict[Tuple[str, Tuple[Tuple[str, str], ...]], float] = {}
 _HISTOGRAMS: Dict[str, Dict[Tuple[Tuple[str, str], ...], Dict[str, float]]] = defaultdict(
     lambda: defaultdict(lambda: {"count": 0.0, "sum": 0.0})
 )
+_HISTOGRAM_BUCKETS: Dict[str, Tuple[float, ...]] = {}
 
 _DURATION_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 90.0)
 _TOKEN_BUCKETS = (100, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000)
@@ -24,10 +26,16 @@ def _label_key(labels: Dict[str, str]) -> Tuple[Tuple[str, str], ...]:
     return tuple(sorted((k, v) for k, v in labels.items()))
 
 
+def _escape_label_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
 def _format_labels(labels: Dict[str, str]) -> str:
     if not labels:
         return ""
-    inner = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+    inner = ",".join(
+        f'{k}="{_escape_label_value(v)}"' for k, v in sorted(labels.items())
+    )
     return f"{{{inner}}}"
 
 
@@ -46,6 +54,8 @@ def set_gauge(name: str, value: float, **labels: str) -> None:
 def observe_histogram(name: str, value: float, buckets: Tuple[float, ...], **labels: str) -> None:
     label_key = _label_key(labels)
     with _LOCK:
+        if name not in _HISTOGRAM_BUCKETS:
+            _HISTOGRAM_BUCKETS[name] = buckets
         hist = _HISTOGRAMS[name][label_key]
         hist["count"] += 1
         hist["sum"] += value
@@ -64,6 +74,7 @@ def reset_metrics() -> None:
         _COUNTERS.clear()
         _GAUGES.clear()
         _HISTOGRAMS.clear()
+        _HISTOGRAM_BUCKETS.clear()
 
 
 def _status_class(status: Any) -> str:
@@ -139,46 +150,59 @@ def record_turn_metrics(
         pass
 
 
+def _snapshot_metrics() -> Tuple[
+    Dict[Tuple[str, Tuple[Tuple[str, str], ...]], float],
+    Dict[Tuple[str, Tuple[Tuple[str, str], ...]], float],
+    Dict[str, Dict[Tuple[Tuple[str, str], ...], Dict[str, float]]],
+    Dict[str, Tuple[float, ...]],
+]:
+    with _LOCK:
+        return (
+            copy.deepcopy(_COUNTERS),
+            copy.deepcopy(_GAUGES),
+            copy.deepcopy(_HISTOGRAMS),
+            dict(_HISTOGRAM_BUCKETS),
+        )
+
+
 def render_prometheus() -> str:
     """Render all metrics in Prometheus text exposition format."""
+    counters, gauges, histograms, histogram_buckets = _snapshot_metrics()
     lines: List[str] = []
 
-    with _LOCK:
-        counter_names = sorted({name for name, _ in _COUNTERS})
-        for name in counter_names:
-            lines.append(f"# HELP {name} Arena metric {name}")
-            lines.append(f"# TYPE {name} counter")
-            for (metric_name, label_key), value in sorted(_COUNTERS.items()):
-                if metric_name != name:
-                    continue
-                labels = dict(label_key)
-                lines.append(f"{name}{_format_labels(labels)} {value}")
+    counter_names = sorted({name for name, _ in counters})
+    for name in counter_names:
+        lines.append(f"# HELP {name} Arena metric {name}")
+        lines.append(f"# TYPE {name} counter")
+        for (metric_name, label_key), value in sorted(counters.items()):
+            if metric_name != name:
+                continue
+            labels = dict(label_key)
+            lines.append(f"{name}{_format_labels(labels)} {value}")
 
-        gauge_names = sorted({name for name, _ in _GAUGES})
-        for name in gauge_names:
-            lines.append(f"# HELP {name} Arena metric {name}")
-            lines.append(f"# TYPE {name} gauge")
-            for (metric_name, label_key), value in sorted(_GAUGES.items()):
-                if metric_name != name:
-                    continue
-                labels = dict(label_key)
-                lines.append(f"{name}{_format_labels(labels)} {value}")
+    gauge_names = sorted({name for name, _ in gauges})
+    for name in gauge_names:
+        lines.append(f"# HELP {name} Arena metric {name}")
+        lines.append(f"# TYPE {name} gauge")
+        for (metric_name, label_key), value in sorted(gauges.items()):
+            if metric_name != name:
+                continue
+            labels = dict(label_key)
+            lines.append(f"{name}{_format_labels(labels)} {value}")
 
-        for name in sorted(_HISTOGRAMS):
-            lines.append(f"# HELP {name} Arena metric {name}")
-            lines.append(f"# TYPE {name} histogram")
-            buckets = _DURATION_BUCKETS if "duration" in name else _TOKEN_BUCKETS
-            for label_key, hist in sorted(_HISTOGRAMS[name].items()):
-                labels = dict(label_key)
-                for bound in buckets:
-                    bucket_val = hist.get(f"le_{bound}", 0.0)
-                    bucket_labels = {**labels, "le": str(bound)}
-                    lines.append(
-                        f"{name}_bucket{_format_labels(bucket_labels)} {bucket_val}"
-                    )
-                inf_labels = {**labels, "le": "+Inf"}
-                lines.append(f"{name}_bucket{_format_labels(inf_labels)} {hist.get('le_inf', 0.0)}")
-                lines.append(f"{name}_sum{_format_labels(labels)} {hist.get('sum', 0.0)}")
-                lines.append(f"{name}_count{_format_labels(labels)} {hist.get('count', 0.0)}")
+    for name in sorted(histograms):
+        lines.append(f"# HELP {name} Arena metric {name}")
+        lines.append(f"# TYPE {name} histogram")
+        buckets = histogram_buckets.get(name, _TOKEN_BUCKETS)
+        for label_key, hist in sorted(histograms[name].items()):
+            labels = dict(label_key)
+            for bound in buckets:
+                bucket_val = hist.get(f"le_{bound}", 0.0)
+                bucket_labels = {**labels, "le": str(bound)}
+                lines.append(f"{name}_bucket{_format_labels(bucket_labels)} {bucket_val}")
+            inf_labels = {**labels, "le": "+Inf"}
+            lines.append(f"{name}_bucket{_format_labels(inf_labels)} {hist.get('le_inf', 0.0)}")
+            lines.append(f"{name}_sum{_format_labels(labels)} {hist.get('sum', 0.0)}")
+            lines.append(f"{name}_count{_format_labels(labels)} {hist.get('count', 0.0)}")
 
     return "\n".join(lines) + "\n"

@@ -70,7 +70,10 @@ def assess_execution_quality(
         job for job in summarize_jobs if str(job.get("outcome") or "") not in {"ok", ""}
     ]
     summarizer_used_chairman = any(
-        job.get("chairman_fallback") and not job.get("cache_hit") for job in summarize_jobs
+        job.get("chairman_fallback")
+        and not job.get("cache_hit")
+        and str(job.get("outcome") or "") == "ok"
+        for job in summarize_jobs
     )
 
     budget_raw = meta.get("budget_decisions") or {}
