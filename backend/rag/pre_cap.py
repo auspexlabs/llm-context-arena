@@ -46,7 +46,7 @@ def apply_ast_aware_cap(
         if chunk.chunk_id in used_ids:
             continue
         parent_id = parent_ids.get(chunk.chunk_id)
-        if parent_id and parent_id not in used_ids and parent_id not in selected_ids:
+        if parent_id and parent_id not in used_ids:
             continue
         filtered.append((chunk, score))
         used_ids.add(chunk.chunk_id)

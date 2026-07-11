@@ -46,8 +46,22 @@ def _combined_tag_modifier(tags: List[str], arena: ArenaConfig) -> float:
 class CatalogLimitResolver:
     """Resolve registered and effective limits from the frozen catalog."""
 
-    def __init__(self, snapshot: Optional[FrozenSnapshot] = None):
+    def __init__(
+        self,
+        snapshot: Optional[FrozenSnapshot] = None,
+        *,
+        accepted_limits: Optional[Dict[str, int]] = None,
+    ):
         self._snapshot = snapshot or get_frozen_snapshot()
+        self._accepted_limits = accepted_limits
+
+    def preload_accepted_limits(self) -> None:
+        """Batch-load non-expired accepted limits (one SQLite round-trip)."""
+        if self._accepted_limits is None:
+            self._accepted_limits = _observation_store().accepted_limits_map()
+
+    def invalidate_accepted_cache(self) -> None:
+        self._accepted_limits = None
 
     @property
     def arena(self) -> ArenaConfig:
@@ -70,9 +84,10 @@ class CatalogLimitResolver:
 
     def planning_base_limit(self, model_id: str) -> int:
         """Observed limit wins after user acceptance; else registered baseline."""
-        accepted = _observation_store().get_accepted(model_id)
-        if accepted:
-            return accepted.observed_limit
+        self.preload_accepted_limits()
+        accepted_limit = self._accepted_limits.get(model_id) if self._accepted_limits else None
+        if accepted_limit is not None:
+            return accepted_limit
         entry = self.catalog.models.get(model_id)
         if entry and entry.observed_limit is not None:
             return entry.observed_limit

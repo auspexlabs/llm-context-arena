@@ -215,7 +215,11 @@ async def run_turn(
             metadata.get("steps"),
             arena_models=arena_models,
         )
-        metadata["observation_pending"] = obs_service.observation_pending_dicts(arena_models)
+        metadata["observation_pending"] = [
+            p
+            for p in obs_service.observation_pending_dicts(arena_models)
+            if p.get("exceeds_threshold")
+        ]
     except Exception:
         logger.debug("Observation recording skipped", exc_info=True)
         metadata.setdefault("observation_pending", [])

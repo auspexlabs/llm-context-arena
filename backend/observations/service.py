@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
-from ..frozen_config import CatalogLimitResolver, get_frozen_snapshot
+from ..frozen_config import CatalogLimitResolver, clear_frozen_cache, get_frozen_snapshot
 from ..frozen_config.loader import MODEL_CATALOG_PATH
 from .store import AcceptedObservation, ObservationStore, PendingObservation, get_observation_store
 
@@ -42,7 +42,6 @@ class ObservationService:
                 "exceeds_threshold": p.delta_ratio >= threshold,
             }
             for p in self.pending_for_models(model_ids)
-            if p.delta_ratio >= threshold
         ]
 
     def record_from_turn_steps(
@@ -90,6 +89,7 @@ class ObservationService:
         accepted = self.store.accept(obs_id, ttl_days=ttl)
         if accepted:
             self._sync_catalog_observed_limit(accepted)
+            self.resolver.invalidate_accepted_cache()
         return accepted
 
     def decline(self, obs_id: int) -> bool:
@@ -142,6 +142,7 @@ class ObservationService:
         entry["observed_limit"] = accepted.observed_limit
         entry["observed_accepted_at"] = accepted.accepted_at
         path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+        clear_frozen_cache()
 
 
 @lru_cache(maxsize=1)

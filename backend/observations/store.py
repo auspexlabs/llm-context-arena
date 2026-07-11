@@ -147,29 +147,47 @@ class ObservationStore:
         return self._row_pending(row) if row else None
 
     def get_accepted(self, model_id: str) -> Optional[AcceptedObservation]:
+        now = _utcnow()
         with self._connect() as conn:
             row = conn.execute(
                 """
                 SELECT model_id, observed_limit, registered_limit, accepted_at,
                        expires_at, source_pending_id
                 FROM observation_accepted
-                WHERE model_id = ?
+                WHERE model_id = ? AND expires_at > ?
                 """,
-                (model_id,),
+                (model_id, now),
             ).fetchone()
         return self._row_accepted(row) if row else None
 
     def list_accepted(self) -> List[AcceptedObservation]:
+        now = _utcnow()
         with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT model_id, observed_limit, registered_limit, accepted_at,
                        expires_at, source_pending_id
                 FROM observation_accepted
+                WHERE expires_at > ?
                 ORDER BY model_id
-                """
+                """,
+                (now,),
             ).fetchall()
         return [self._row_accepted(r) for r in rows]
+
+    def accepted_limits_map(self) -> Dict[str, int]:
+        """Non-expired accepted limits in one query."""
+        now = _utcnow()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT model_id, observed_limit
+                FROM observation_accepted
+                WHERE expires_at > ?
+                """,
+                (now,),
+            ).fetchall()
+        return {str(row["model_id"]): int(row["observed_limit"]) for row in rows}
 
     def propose(
         self,

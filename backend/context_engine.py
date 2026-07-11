@@ -200,6 +200,8 @@ class ContextEngine:
 
             pending = get_observation_service().observation_pending_dicts(models)
             for obs in pending:
+                if not obs.get("exceeds_threshold"):
+                    continue
                 warnings.append(
                     "Limit observation pending for "
                     f"{obs['model_id']}: observed={obs['observed_limit']} "

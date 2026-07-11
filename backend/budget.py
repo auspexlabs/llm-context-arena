@@ -192,6 +192,7 @@ async def build_budgeted_prompts(
 
         allocator = get_budget_allocator()
     resolver = resolver or CatalogLimitResolver()
+    resolver.preload_accepted_limits()
     summarizer = summarizer or SummarizerService(query_model_fn, chairman_model=chairman_model)
 
     tail_parts = [p for p in (directive_instructions, mode_instructions, extra_instructions) if p]

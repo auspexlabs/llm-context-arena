@@ -61,5 +61,30 @@ class TestObservationService:
             registered_limit=100000,
             observed_limit=50000,
         )
-        flagged = obs_service.observation_pending_dicts(["m/b"])
-        assert flagged[0]["exceeds_threshold"] is True
+        obs_service.store.propose(
+            model_id="m/c",
+            registered_limit=100000,
+            observed_limit=95000,
+        )
+        pending = obs_service.observation_pending_dicts(["m/b", "m/c"])
+        by_model = {p["model_id"]: p for p in pending}
+        assert by_model["m/b"]["exceeds_threshold"] is True
+        assert by_model["m/c"]["exceeds_threshold"] is False
+
+    def test_expired_accepted_not_returned(self, obs_store):
+        from datetime import datetime, timedelta, timezone
+
+        pending = obs_store.propose(
+            model_id="m/expired",
+            registered_limit=100000,
+            observed_limit=50000,
+        )
+        obs_store.accept(pending.id, ttl_days=60)
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        with obs_store._connect() as conn:
+            conn.execute(
+                "UPDATE observation_accepted SET expires_at = ? WHERE model_id = ?",
+                (past, "m/expired"),
+            )
+        assert obs_store.get_accepted("m/expired") is None
+        assert "m/expired" not in obs_store.accepted_limits_map()
