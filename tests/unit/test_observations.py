@@ -106,3 +106,58 @@ class TestObservationService:
             )
         assert obs_store.get_accepted("m/expired") is None
         assert "m/expired" not in obs_store.accepted_limits_map()
+
+    def test_archive_expired_moves_to_archive(self, obs_store):
+        from datetime import datetime, timedelta, timezone
+
+        pending = obs_store.propose(
+            model_id="m/archive",
+            registered_limit=100000,
+            observed_limit=50000,
+        )
+        obs_store.accept(pending.id, ttl_days=60)
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        with obs_store._connect() as conn:
+            conn.execute(
+                "UPDATE observation_accepted SET expires_at = ? WHERE model_id = ?",
+                (past, "m/archive"),
+            )
+
+        archived = obs_store.archive_expired_accepted()
+        assert len(archived) == 1
+        assert archived[0].model_id == "m/archive"
+        assert obs_store.list_expired_accepted() == []
+
+        with obs_store._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c FROM observation_archive WHERE model_id = ?",
+                ("m/archive",),
+            ).fetchone()
+        assert int(row["c"]) == 1
+
+
+class TestObservationSweep:
+    def test_sweep_expired_returns_reverify_models(self, obs_service, obs_store):
+        from datetime import datetime, timedelta, timezone
+
+        pending = obs_store.propose(
+            model_id="m/sweep",
+            registered_limit=100000,
+            observed_limit=50000,
+        )
+        obs_store.accept(pending.id, ttl_days=60)
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        with obs_store._connect() as conn:
+            conn.execute(
+                "UPDATE observation_accepted SET expires_at = ? WHERE model_id = ?",
+                (past, "m/sweep"),
+            )
+
+        result = obs_service.sweep_expired_observations()
+        assert result["archived_count"] == 1
+        assert result["reverify_required"] == ["m/sweep"]
+
+    def test_sweep_idempotent_when_nothing_expired(self, obs_service):
+        result = obs_service.sweep_expired_observations()
+        assert result["archived_count"] == 0
+        assert result["reverify_required"] == []

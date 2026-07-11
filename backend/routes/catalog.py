@@ -80,6 +80,12 @@ async def accept_observation(obs_id: int) -> ObservationActionResponse:
     return ObservationActionResponse(ok=True, observation=accepted.to_dict())
 
 
+@router.post("/observations/sweep-expired")
+async def sweep_expired_observations() -> Dict[str, Any]:
+    """Archive expired accepted observations and flag models for re-verification."""
+    return get_observation_service().sweep_expired_observations()
+
+
 @router.post("/observations/{obs_id}/decline", response_model=ObservationActionResponse)
 async def decline_observation(obs_id: int) -> ObservationActionResponse:
     """Decline a pending observation."""

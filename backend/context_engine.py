@@ -208,6 +208,11 @@ class ContextEngine:
                     f"registered={obs['registered_limit']} "
                     f"(delta={obs['delta_ratio']:.0%}) — accept or decline before trusting limits."
                 )
+            sweep = obs_service.sweep_expired_observations()
+            for model_id in sweep.get("reverify_required") or []:
+                warnings.append(
+                    f"Accepted limit for {model_id} expired — re-verify before trusting observed limits."
+                )
         except Exception:
             logger.debug("Observation warnings skipped", exc_info=True)
 

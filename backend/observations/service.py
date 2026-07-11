@@ -140,12 +140,36 @@ class ObservationService:
     def decline(self, obs_id: int) -> bool:
         return self.store.decline(obs_id)
 
+    def sweep_expired_observations(self) -> Dict[str, Any]:
+        """Archive expired accepted limits and clear stale catalog observed_limit entries."""
+        expired = self.store.archive_expired_accepted()
+        if not expired:
+            return {"archived_count": 0, "models": [], "reverify_required": []}
+
+        reverify_required: List[str] = []
+        for accepted in expired:
+            self._clear_catalog_observed_limit(accepted.model_id)
+            reverify_required.append(accepted.model_id)
+
+        self.resolver.invalidate_accepted_cache()
+        return {
+            "archived_count": len(expired),
+            "models": [a.model_id for a in expired],
+            "reverify_required": reverify_required,
+            "archived": [a.to_dict() for a in expired],
+        }
+
     def effective_limits_report(
         self,
         model_ids: List[str],
         *,
         squad_name: Optional[str] = None,
+        sweep_expired: bool = True,
     ) -> Dict[str, Any]:
+        sweep_result: Optional[Dict[str, Any]] = None
+        if sweep_expired:
+            sweep_result = self.sweep_expired_observations()
+
         rows = []
         for model_id in model_ids:
             breakdown = self.resolver.breakdown(model_id)
@@ -165,11 +189,43 @@ class ObservationService:
                     "observation_accepted": accepted.to_dict() if accepted else None,
                 }
             )
-        return {
+        report: Dict[str, Any] = {
             "squad": squad_name,
             "models": rows,
             "pending_count": sum(len(r["pending_observations"]) for r in rows),
         }
+        if sweep_result and sweep_result.get("archived_count"):
+            report["reverify_required"] = sweep_result.get("reverify_required") or []
+            report["expired_sweep"] = {
+                "archived_count": sweep_result["archived_count"],
+                "models": sweep_result.get("models") or [],
+            }
+        return report
+
+    def _clear_catalog_observed_limit(self, model_id: str) -> None:
+        """Remove stale observed_limit from catalog after TTL expiry."""
+        import yaml
+
+        path = MODEL_CATALOG_PATH
+        if not path.is_file():
+            return
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+        models = raw.get("models")
+        if not isinstance(models, dict):
+            return
+        entry = models.get(model_id)
+        if not isinstance(entry, dict):
+            return
+        changed = False
+        for key in ("observed_limit", "observed_accepted_at"):
+            if key in entry:
+                entry.pop(key, None)
+                changed = True
+        if changed:
+            path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+            clear_frozen_cache()
 
     def _sync_catalog_observed_limit(self, accepted: AcceptedObservation) -> None:
         """Persist accepted observed limit to model_catalog.yaml."""
