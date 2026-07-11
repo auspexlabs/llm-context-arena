@@ -13,8 +13,10 @@ wheels/
 # Keys and secrets
 .env
 
-# Data files
-data/
+# Data files (runtime artifacts); committed DEC-018 config is excepted
+data/*
+!data/arena_config.yaml
+!data/model_catalog.yaml
 
 # Per-conversation repo snapshots from ZIP/git indexing
 temp_repos/

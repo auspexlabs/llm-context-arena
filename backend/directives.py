@@ -227,19 +227,11 @@ def build_mode_instructions(mode: str) -> str:
     Returns:
         Instruction string describing the mode
     """
+    from .prompts import get_prompt
+
     mode = (mode or "council").lower()
-
-    mode_instructions = {
-        "baseline": "Mode: Council. Multiple models answer, then rank, then chairman synthesizes.",
-        "council": "Mode: Council. Multiple models answer, then rank, then chairman synthesizes.",
-        "round_robin": "Mode: Round Robin. Consider prior drafts, improve accuracy/clarity, keep useful detail.",
-        "fight": "Mode: Fight. Take a clear position on the question and be ready to defend it. Later prompts will explicitly guide critiques and defenses.",
-        "stacks": "Mode: Stacks. Provide an answer suitable for later merge/judge steps; retain optionality.",
-        "complex_iterative": "Mode: Complex Iterative. Extract constraints and propose next steps succinctly.",
-        "complex_questioning": "Mode: Complex Questioning. Provide answer and note uncertainties for later reflection.",
-    }
-
-    return mode_instructions.get(mode, "")
+    entry = get_prompt(f"mode.{mode}")
+    return entry.template if entry else ""
 
 
 # Module-level parser instance for convenience
