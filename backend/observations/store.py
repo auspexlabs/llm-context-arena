@@ -175,6 +175,84 @@ class ObservationStore:
             ).fetchall()
         return [self._row_accepted(r) for r in rows]
 
+    def list_expired_accepted(self) -> List[AcceptedObservation]:
+        """Accepted rows past expires_at that have not yet been archived."""
+        now = _utcnow()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT model_id, observed_limit, registered_limit, accepted_at,
+                       expires_at, source_pending_id
+                FROM observation_accepted
+                WHERE expires_at <= ?
+                ORDER BY expires_at
+                """,
+                (now,),
+            ).fetchall()
+        return [self._row_accepted(r) for r in rows]
+
+    def archive_expired_accepted(self) -> List[AcceptedObservation]:
+        """Move expired accepted observations to archive and remove from active table."""
+        archived_at = _utcnow()
+        archived: List[AcceptedObservation] = []
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT model_id, observed_limit, registered_limit, accepted_at,
+                       expires_at, source_pending_id
+                FROM observation_accepted
+                WHERE expires_at <= ?
+                ORDER BY expires_at
+                """,
+                (archived_at,),
+            ).fetchall()
+            for row in rows:
+                accepted = self._row_accepted(row)
+                conn.execute(
+                    """
+                    INSERT INTO observation_archive
+                    (model_id, observed_limit, registered_limit, accepted_at,
+                     expires_at, archived_at, source_pending_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        accepted.model_id,
+                        accepted.observed_limit,
+                        accepted.registered_limit,
+                        accepted.accepted_at,
+                        accepted.expires_at,
+                        archived_at,
+                        accepted.source_pending_id,
+                    ),
+                )
+                deleted = conn.execute(
+                    """
+                    DELETE FROM observation_accepted
+                    WHERE model_id = ? AND expires_at = ?
+                    """,
+                    (accepted.model_id, accepted.expires_at),
+                )
+                if deleted.rowcount == 0:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO observation_history
+                    (model_id, action, registered_limit, observed_limit, delta_ratio,
+                     created_at, details)
+                    VALUES (?, 'expired', ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        accepted.model_id,
+                        accepted.registered_limit,
+                        accepted.observed_limit,
+                        0.0,
+                        archived_at,
+                        f"expires_at={accepted.expires_at}",
+                    ),
+                )
+                archived.append(accepted)
+        return archived
+
     def accepted_limits_map(self) -> Dict[str, int]:
         """Non-expired accepted limits in one query."""
         now = _utcnow()

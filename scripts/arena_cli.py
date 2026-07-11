@@ -68,6 +68,10 @@ def main() -> int:
         help="Show effective limits + pending observations",
     )
     p_eff.add_argument("--squad", default=None, help="Squad preset name")
+    p_sweep = p_catalog_sub.add_parser(
+        "observation-sweep",
+        help="Archive expired accepted observations and flag re-verify",
+    )
 
     args = parser.parse_args()
 
@@ -78,6 +82,10 @@ def main() -> int:
     if args.command == "catalog" and args.catalog_cmd == "effective-limits":
         args.squad = getattr(args, "squad", None)
         return _cmd_effective_limits(args)
+    if args.command == "catalog" and args.catalog_cmd == "observation-sweep":
+        result = get_observation_service().sweep_expired_observations()
+        print(json.dumps(result, indent=2))
+        return 0
 
     parser.error("Unknown command")
     return 2

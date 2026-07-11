@@ -198,7 +198,8 @@ class ContextEngine:
         try:
             from .observations import get_observation_service
 
-            pending = get_observation_service().observation_pending_dicts(models)
+            obs_service = get_observation_service()
+            pending = obs_service.observation_pending_dicts(models)
             for obs in pending:
                 if not obs.get("exceeds_threshold"):
                     continue
@@ -208,6 +209,13 @@ class ContextEngine:
                     f"registered={obs['registered_limit']} "
                     f"(delta={obs['delta_ratio']:.0%}) — accept or decline before trusting limits."
                 )
+            wanted = set(models)
+            for expired in obs_service.store.list_expired_accepted():
+                if expired.model_id in wanted:
+                    warnings.append(
+                        f"Accepted limit for {expired.model_id} expired — "
+                        "run observation-sweep or re-verify before trusting observed limits."
+                    )
         except Exception:
             logger.debug("Observation warnings skipped", exc_info=True)
 

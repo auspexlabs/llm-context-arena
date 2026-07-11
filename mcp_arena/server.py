@@ -286,6 +286,12 @@ async def decline_observation(observation_id: int) -> str:
 
 
 @mcp.tool()
+async def sweep_expired_observations() -> str:
+    """Archive expired accepted observations and return models needing re-verification."""
+    return _json(get_observation_service().sweep_expired_observations())
+
+
+@mcp.tool()
 async def config_validate() -> str:
     """Validate arena_config.yaml and model_catalog.yaml against frozen schemas."""
     ok, issues = validate_frozen_config()
