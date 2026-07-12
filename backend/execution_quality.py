@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from .model_failures import collect_failure_recommendations, failure_status_class
+
 
 def _has_content(text: Any) -> bool:
     return bool(str(text or "").strip())
@@ -39,8 +41,12 @@ def assess_execution_quality(
     steps = list(meta.get("steps") or [])
     issues: List[Dict[str, Any]] = []
     recommendations: List[str] = []
+    failure_kinds: List[str] = []
 
     for failure in failures:
+        kind = failure.get("failure_kind") or failure_status_class(failure)
+        if kind not in failure_kinds:
+            failure_kinds.append(kind)
         issues.append(
             {
                 "code": "model_failure",
@@ -49,6 +55,7 @@ def assess_execution_quality(
                 "message": failure.get("message"),
                 "provider": failure.get("provider"),
                 "stage": failure.get("stage") or failure.get("role"),
+                "failure_kind": kind,
             }
         )
 
@@ -239,6 +246,10 @@ def assess_execution_quality(
                 }
             )
 
+    if failures:
+        for rec in collect_failure_recommendations(failures):
+            if rec not in recommendations:
+                recommendations.append(rec)
     if failures and not recommendations:
         recommendations.append(
             "Model failures occurred. Read metadata.model_failures and retry or "
@@ -282,6 +293,7 @@ def assess_execution_quality(
         "budget_decisions": budget_decisions,
         "observation_pending": observation_pending,
         "summarizer_used_chairman": summarizer_used_chairman,
+        "failure_kinds": failure_kinds,
         "stats": {
             "model_failures": len(failures),
             "arena_models": len(models),
@@ -314,8 +326,9 @@ def _format_issue_line(issue: Dict[str, Any]) -> str:
     if code == "model_failure":
         model = (issue.get("model") or "?").split("/")[-1]
         status = issue.get("status")
+        kind = issue.get("failure_kind") or "unknown"
         msg = (issue.get("message") or "")[:120]
-        return f"- model_failure: {model} (HTTP {status}) — {msg}"
+        return f"- model_failure ({kind}): {model} (HTTP {status}) — {msg}"
     if code == "context_compressed":
         return "- context was chairman-summarized for token budget"
     if code == "chairman_summarizer":

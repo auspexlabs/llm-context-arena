@@ -77,22 +77,6 @@ def reset_metrics() -> None:
         _HISTOGRAM_BUCKETS.clear()
 
 
-def _status_class(status: Any) -> str:
-    try:
-        code = int(status)
-    except (TypeError, ValueError):
-        return "unknown"
-    if code == 429:
-        return "rate_limit"
-    if code in {404, 403}:
-        return "policy_blocked"
-    if code >= 500:
-        return "server_error"
-    if code >= 400:
-        return "client_error"
-    return "unknown"
-
-
 def record_turn_metrics(
     *,
     metadata: Optional[Dict[str, Any]] = None,
@@ -106,10 +90,12 @@ def record_turn_metrics(
 
     increment_counter("arena_turns_total", mode=mode, quality_severity=severity)
 
+    from .model_failures import failure_status_class
+
     for failure in meta.get("model_failures") or []:
         increment_counter(
             "arena_model_failures_total",
-            status_class=_status_class(failure.get("status")),
+            status_class=failure_status_class(failure),
         )
 
     budget_decisions = meta.get("budget_decisions") or {}
