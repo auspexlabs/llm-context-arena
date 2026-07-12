@@ -8,6 +8,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from .frozen_config import get_frozen_snapshot
+from .model_failures import failure_status_class
 
 _LOCK = threading.Lock()
 
@@ -89,8 +90,6 @@ def record_turn_metrics(
     severity = qual.get("severity") or "ok"
 
     increment_counter("arena_turns_total", mode=mode, quality_severity=severity)
-
-    from .model_failures import failure_status_class
 
     for failure in meta.get("model_failures") or []:
         increment_counter(

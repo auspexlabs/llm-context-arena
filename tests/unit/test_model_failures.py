@@ -36,6 +36,14 @@ class TestModelFailureClassification:
         rec = enrich_failure_record({"status": 500, "message": "upstream"})
         assert failure_status_class(rec) == "server_error"
 
+    def test_no_response_classified_unknown_not_timeout(self):
+        rec = failure_record("m1", None, stage="stage1", role="answer")
+        assert rec["failure_kind"] == "unknown"
+
+    def test_generic_logging_message_not_privacy_blocked(self):
+        kind = classify_model_failure(status=500, message="error occurred during request logging")
+        assert kind == ModelFailureKind.SERVER_ERROR
+
     def test_collect_failure_recommendations_dedupes(self):
         failures = [
             {"failure_kind": "rate_limit"},

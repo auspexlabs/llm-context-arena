@@ -50,7 +50,7 @@ def failure_record(
             "stage": stage,
             "role": role,
             "status": None,
-            "message": "No response from model (timeout or unknown error)",
+            "message": "No response from model (unknown error)",
             "provider": None,
             "raw": None,
         }
