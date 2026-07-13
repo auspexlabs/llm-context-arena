@@ -288,10 +288,16 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **decision:** Extract `run_turn()` as the single full-turn path (sync + stream). Add council-only turn sidecar (`TurnRecord` + `TurnStore`) with `POST/GET/DELETE turns` and `advance` step API. Ship `mcp_arena` MCP server (stdio) as httpx wrapper — no duplicated arena logic. MCP `run_council_turn` convenience chains create + 3× advance.
 - **defers:** `await_user`/resume (Phase 2), non-council step checkpoints, `prepare_context` standalone tool, agent SDK package.
 
+### PIV-002: Observatory UI greenfield — locked visual spec
+- **date:** 2026-07-13 · **status:** accepted · **triggered_by:** `PIV-001` Phase 2; chat-first UI unfit for observation deck · **docs_updated:** `docs/piv-002-observatory-ui.md`, `docs/mockups/observatory-deck.html` · **related:** `PIV-001`, `DEC-015`, `DEC-018` · **doc:** [`docs/piv-002-observatory-ui.md`](piv-002-observatory-ui.md)
+- **pivot:** **Cutover** greenfield deck UI (no legacy chat shell). Three-zone layout: **Rail 280px** · **Deck** · **Inspector 420px** (context + rankings + quality, all visible). Base typography **16px**; complete turns show duration/cost in rail, filled verdict lane, review-complete viewport. **Take control** always visible, muted until engaged. Stack: Vite + vanilla TS, SSE watch, FastAPI unchanged.
+- **canonical mock:** [`docs/mockups/observatory-deck.html`](mockups/observatory-deck.html) — implementation must not shrink type or inspector width below mock.
+- **defers:** mobile layout, `WorkflowOffer` branch picker (PIV-002c), Three.js graph layer.
+
 ### PIV-001: Agent control plane — agents drive, UI observes, humans await
 - **date:** 2026-07-07 · **status:** accepted · **triggered_by:** product direction review; agent-orchestration vision for multi-model deliberation + CodeRAG · **docs_updated:** `docs/decision_log.md`, `docs/piv-001-agent-control-plane.md`, `docs/piv-001-checklist.md` · **related:** `DEC-001`, `DEC-007`, `DEC-010`, `DEC-011`, `DEC-013`, `DEF-003`, `DEF-004` · **doc:** [`docs/piv-001-agent-control-plane.md`](piv-001-agent-control-plane.md)
 - **pivot:** Arena becomes an **agent control plane** (turn/step/resume APIs, structured `ArenaExecution`, index tools). UI becomes an **observatory**; humans enter via **`await_user`** checkpoints, not as default operator every turn. Disagreement (stage 1 + stage 2 rankings) stays first-class signal for drivers.
-- **defers:** Full UI redesign, multi-agent supervisors, DEF-003 `expand_trace`, DEF-004 index hygiene — sequenced in `piv-001-checklist.md` Phases 0–3.
+- **defers:** Full UI redesign, multi-agent supervisors, DEF-003 `expand_trace`, DEF-004 index hygiene — sequenced in `piv-001-checklist.md` Phases 0–3. UI redesign scope now **PIV-002**.
 
 ### DEF-004: Defer conditional rerank and index hygiene for eval/doc artifacts
 - **date:** 2026-07-07 · **status:** active · **triggered_by:** `DIS-001` · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-011`, `DEC-008`
