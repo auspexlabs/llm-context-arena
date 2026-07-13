@@ -45,6 +45,11 @@ const initial: DeckState = {
   takeControl: false,
   isRunning: false,
   modeProgress: { current: 0, total: 0, label: '' },
+  activeAgentTurn: null,
+  pendingTurn: null,
+  sessionPinned: false,
+  newSessionIds: [],
+  pollError: null,
   theme: 'light',
   settingsOpen: false,
 };
@@ -162,11 +167,13 @@ export function updateConversations(conversations: ConversationSummary[]) {
   patch({ conversations });
 }
 
-export function selectConversation(id: string, conversation: Conversation) {
+export function selectConversation(id: string, conversation: Conversation, opts?: { pinned?: boolean }) {
   const normalized = normalizeConversation(conversation);
   const assistants = assistantMessages(normalized);
-  const turnIdx = Math.max(0, assistants.length - 1);
-  const view = defaultDeckView(assistants[turnIdx] ?? null);
+  const users = normalized.messages.filter((m) => m.role === 'user');
+  const hasPending = users.length > assistants.length;
+  const turnIdx = hasPending ? assistants.length : Math.max(0, assistants.length - 1);
+  const view = hasPending ? 'answers' : defaultDeckView(assistants[turnIdx] ?? null);
   patch({
     conversationId: id,
     conversation: normalized,
@@ -175,6 +182,15 @@ export function selectConversation(id: string, conversation: Conversation) {
     focusedStep: councilStepFromView(view) ?? 'answers',
     inspectorColumn: inspectorColumnForView(view),
     modeProgress: { current: 0, total: 0, label: '' },
+    pendingTurn: hasPending
+      ? {
+          turnIndex: assistants.length,
+          userQuery: (users[users.length - 1] as { content: string }).content,
+          source: 'external',
+        }
+      : null,
+    sessionPinned: opts?.pinned ?? false,
+    newSessionIds: getState().newSessionIds.filter((sid) => sid !== id),
     ...resetTurnUi(),
   });
 }

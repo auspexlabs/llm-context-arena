@@ -61,6 +61,25 @@ export interface ModeProgress {
   state?: string;
 }
 
+/** Agent turn sidecar snapshot (create_turn / advance_turn path). */
+export interface AgentTurnSnapshot {
+  turn_id: string;
+  status: string;
+  step_index: number;
+  step_total: number;
+  next_step?: string | null;
+  user_query?: string;
+  agent_id?: string | null;
+}
+
+/** Turn awaiting assistant message (MCP send_message or orphan user msg). */
+export interface PendingTurn {
+  turnIndex: number;
+  userQuery: string;
+  source: 'external' | 'local';
+  startedAt?: number;
+}
+
 export interface TurnView {
   index: number;
   status: TurnStatus;
@@ -86,6 +105,15 @@ export interface DeckState {
   takeControl: boolean;
   isRunning: boolean;
   modeProgress: ModeProgress;
+  /** Active agent turn from sidecar API, if any. */
+  activeAgentTurn: AgentTurnSnapshot | null;
+  /** User message without matching assistant (external MCP run). */
+  pendingTurn: PendingTurn | null;
+  /** User manually picked a session — suppress auto-switch on new MCP sessions. */
+  sessionPinned: boolean;
+  /** Conversation ids surfaced since last poll (badge in rail). */
+  newSessionIds: string[];
+  pollError: string | null;
   theme: 'light' | 'dark';
   settingsOpen: boolean;
 }

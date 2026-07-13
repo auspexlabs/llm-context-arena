@@ -17,6 +17,8 @@ import {
   updateConversations,
 } from './store';
 import type { DeckView } from './types';
+import { startLivePoll } from './live-poll';
+import { isPendingTurnSelected } from './turns';
 import { runTurnStream } from './stream';
 import { resetModelTab } from './viewers/council';
 import { renderDeckViewport } from './viewers/deck';
@@ -67,6 +69,7 @@ async function bootstrap() {
     setTheme('dark');
   }
   await refreshConversations();
+  startLivePoll();
 }
 
 async function refreshConversations() {
@@ -75,7 +78,7 @@ async function refreshConversations() {
   const { conversationId } = getState();
   if (conversationId) {
     const conv = await api.getConversation(conversationId);
-    selectConversation(conversationId, conv);
+    selectConversation(conversationId, conv, { pinned: getState().sessionPinned });
   } else if (convs.length) {
     const conv = await api.getConversation(convs[0].id);
     selectConversation(convs[0].id, conv);
@@ -103,8 +106,23 @@ function renderViewportOnly() {
   const assistants = assistantMessages(s.conversation);
   const msg = assistants[s.selectedTurnIndex] ?? null;
   const isLast = s.selectedTurnIndex === assistants.length - 1;
-  const running = s.isRunning && isLast;
-  renderDeckViewport(vp, s.deckView, s.conversation, msg, s.selectedTurnIndex, running);
+  const pendingSelected = isPendingTurnSelected(
+    s.selectedTurnIndex,
+    assistants.length,
+    s.pendingTurn
+  );
+  const running = (s.isRunning && isLast) || pendingSelected;
+  renderDeckViewport(
+    vp,
+    s.deckView,
+    s.conversation,
+    msg,
+    s.selectedTurnIndex,
+    running,
+    s.pendingTurn,
+    s.activeAgentTurn,
+    s.modeProgress
+  );
   requestAnimationFrame(() => restoreViewportScroll(vp, scrollTop, anchor, anchorRelTop));
 }
 
@@ -112,7 +130,7 @@ function renderRail() {
   const s = getState();
   const assistants = assistantMessages(s.conversation);
   const messages = s.conversation?.messages || [];
-  const turnsHtml = assistants
+  const assistantTurnsHtml = assistants
     .map((msg, i) => {
       const isLast = i === assistants.length - 1;
       const status = s.isRunning && isLast ? 'running' : msg.stage3?.response ? 'complete' : 'idle';
@@ -134,14 +152,36 @@ function renderRail() {
     })
     .join('');
 
+  const pending = s.pendingTurn;
+  const pendingHtml =
+    pending && isPendingTurnSelected(pending.turnIndex, assistants.length, pending)
+      ? `
+        <button type="button" class="turn-item on running" data-turn="${pending.turnIndex}">
+          <div class="title">Turn ${pending.turnIndex + 1} · ${pending.userQuery.slice(0, 40).replace(/</g, '')}${pending.userQuery.length > 40 ? '…' : ''}</div>
+          <div class="meta"><span style="color:var(--accent)">● running</span> · external</div>
+        </button>`
+      : pending
+        ? `
+        <button type="button" class="turn-item running" data-turn="${pending.turnIndex}">
+          <div class="title">Turn ${pending.turnIndex + 1} · ${pending.userQuery.slice(0, 40).replace(/</g, '')}${pending.userQuery.length > 40 ? '…' : ''}</div>
+          <div class="meta"><span style="color:var(--accent)">● running</span> · external</div>
+        </button>`
+        : '';
+
+  const turnsHtml = assistantTurnsHtml + pendingHtml;
+
   const sessionTitle = s.conversation?.title || 'No session';
   const sessionMode = s.conversation?.mode || 'council';
+  const pollNote = s.pollError
+    ? `<p class="meta poll-err">Live refresh: ${s.pollError.replace(/</g, '')}</p>`
+    : '<p class="meta poll-ok">Live refresh on</p>';
 
   els.rail.innerHTML = `
     <div class="rail-head">
       <h2>Observatory</h2>
       <button type="button" class="rail-btn" id="btn-settings">⚙</button>
     </div>
+    ${pollNote}
     <div class="rail-turns">
       <div class="rail-turns-head">
         <h2>Turns</h2>
@@ -155,8 +195,8 @@ function renderRail() {
       ${s.conversations
         .map(
           (c) => `
-        <button type="button" class="session ${c.id === s.conversationId ? 'on' : ''}" data-session="${c.id}">
-          <div class="title">${c.title || 'Session'} · ${c.mode || 'council'}</div>
+        <button type="button" class="session ${c.id === s.conversationId ? 'on' : ''} ${s.newSessionIds.includes(c.id) ? 'new' : ''}" data-session="${c.id}">
+          <div class="title">${c.title || 'Session'} · ${c.mode || 'council'}${s.newSessionIds.includes(c.id) ? ' <span class="new-badge">new</span>' : ''}</div>
           <div class="meta">${c.message_count} messages</div>
         </button>`
         )
@@ -170,7 +210,7 @@ function renderRail() {
     btn.addEventListener('click', async () => {
       const id = (btn as HTMLElement).dataset.session!;
       const conv = await api.getConversation(id);
-      selectConversation(id, conv);
+      selectConversation(id, conv, { pinned: true });
       resetModelTab();
     });
   });
@@ -187,7 +227,12 @@ function renderDeck() {
   const assistants = assistantMessages(s.conversation);
   const msg = assistants[s.selectedTurnIndex] ?? null;
   const isLast = s.selectedTurnIndex === assistants.length - 1;
-  const running = s.isRunning && isLast;
+  const pendingSelected = isPendingTurnSelected(
+    s.selectedTurnIndex,
+    assistants.length,
+    s.pendingTurn
+  );
+  const running = (s.isRunning && isLast) || pendingSelected;
   const complete = !!msg?.stage3?.response;
   const turnCtx = buildTurnContext(s.conversation, msg, s.selectedTurnIndex);
   const statusLabel = running ? 'running' : complete ? 'complete' : 'idle';
@@ -218,12 +263,14 @@ function renderDeck() {
 
   const bc = buildBreadcrumb(turnCtx, s.selectedTurnIndex, statusLabel);
   const userQuery = userQueryBefore(s.conversation?.messages || [], s.selectedTurnIndex);
+  const bannerQuery = userQuery || s.pendingTurn?.userQuery || '';
   const runningBanner =
-    running && userQuery
+    running && bannerQuery
       ? `<div class="running-banner">
           <span class="running-badge">Turn ${s.selectedTurnIndex + 1} running</span>
-          <p class="running-query">${userQuery.replace(/</g, '&lt;')}</p>
+          <p class="running-query">${bannerQuery.replace(/</g, '&lt;')}</p>
           ${s.modeProgress.label ? `<p class="meta">${s.modeProgress.label}${s.modeProgress.activeModel ? ` · ${String(s.modeProgress.activeModel).split('/').pop()}` : ''}</p>` : ''}
+          ${pendingSelected ? '<p class="meta">External agent run — polling for completion</p>' : ''}
         </div>`
       : '';
 
@@ -264,7 +311,17 @@ function renderDeck() {
   });
 
   const vp = els.deck.querySelector('#viewport') as HTMLElement;
-  renderDeckViewport(vp, s.deckView, s.conversation, msg, s.selectedTurnIndex, running);
+  renderDeckViewport(
+    vp,
+    s.deckView,
+    s.conversation,
+    msg,
+    s.selectedTurnIndex,
+    running,
+    s.pendingTurn,
+    s.activeAgentTurn,
+    s.modeProgress
+  );
 }
 
 function renderInspectorPanel() {
@@ -291,11 +348,14 @@ function renderVerdict() {
 
 function renderFoot() {
   const s = getState();
+  const external = s.pendingTurn && !s.isRunning;
   const note = s.isRunning
     ? 'Arena running — see your message in the banner above · Answers tab updates live'
-    : s.takeControl
-      ? 'You are driving — Run turn sends the next message'
-      : 'Turn complete · Take control to send another';
+    : external
+      ? 'External deliberation in progress — deck refreshes every few seconds'
+      : s.takeControl
+        ? 'You are driving — Run turn sends the next message'
+        : 'Turn complete · Take control to send another';
 
   els.foot.innerHTML = `
     <span class="foot-note">${note}</span>
@@ -335,7 +395,7 @@ async function createSession() {
   const conv = await api.createConversation('council');
   await refreshConversations();
   const full = await api.getConversation(conv.id);
-  selectConversation(conv.id, full);
+  selectConversation(conv.id, full, { pinned: true });
 }
 
 function openSettings() {

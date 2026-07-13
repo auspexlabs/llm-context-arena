@@ -50,6 +50,16 @@ export const api = {
     return response.json();
   },
 
+  async listTurns(conversationId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/turns`
+    );
+    if (!response.ok) {
+      throw new Error('Failed to list turns');
+    }
+    return response.json();
+  },
+
   /**
    * Send a message in a conversation.
    */
