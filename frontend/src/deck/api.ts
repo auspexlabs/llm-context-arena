@@ -1,7 +1,7 @@
 // @ts-nocheck — ported from api.js; typed wrappers in a later pass
 /* API client — PIV-002a */
 /**
- * API client for the LLM Context Arena backend.
+ * API client for the Curia backend.
  */
 
 // Allow overriding the backend URL via Vite env; default to local dev backend.

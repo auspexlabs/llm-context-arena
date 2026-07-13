@@ -8,6 +8,20 @@ import pytest
 from mcp_arena.client import ArenaClient
 
 
+def test_client_prefers_curia_api_url_env(monkeypatch):
+    monkeypatch.delenv("ARENA_API_URL", raising=False)
+    monkeypatch.setenv("CURIA_API_URL", "http://curia:9000")
+    client = ArenaClient()
+    assert client.base_url == "http://curia:9000"
+
+
+def test_client_falls_back_to_legacy_arena_api_url(monkeypatch):
+    monkeypatch.delenv("CURIA_API_URL", raising=False)
+    monkeypatch.setenv("ARENA_API_URL", "http://legacy:8001")
+    client = ArenaClient()
+    assert client.base_url == "http://legacy:8001"
+
+
 @pytest.mark.asyncio
 async def test_create_turn_sends_agent_header():
     client = ArenaClient(base_url="http://test", agent_id="cursor-agent")

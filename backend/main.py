@@ -1,4 +1,4 @@
-"""FastAPI backend for LLM Context Arena."""
+"""FastAPI backend for Curia."""
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,7 +51,7 @@ from .rag_lmstudio import (
     _load_manifest,
 )
 
-app = FastAPI(title="LLM Context Arena API")
+app = FastAPI(title="Curia API")
 logger = logging.getLogger(__name__)
 app.include_router(turns_router)
 app.include_router(execution_router)
@@ -139,7 +139,7 @@ class Conversation(BaseModel):
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"status": "ok", "service": "LLM Context Arena API"}
+    return {"status": "ok", "service": "Curia API"}
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — Curia rebrand (PIV-003)
+
+### Breaking Changes
+- GitHub repository: `llm-context-arena` → [`Auspex-Aerie/curia`](https://github.com/Auspex-Aerie/curia)
+- Python package: `llm-context-arena` → `curia`
+- MCP entry point: `curia-mcp` (preferred); `arena-mcp` deprecated alias
+- MCP server id: `curia` (was `llm-context-arena`)
+- Env vars: `CURIA_API_URL`, `CURIA_AGENT_ID`, `CURIA_MCP_*` preferred; `ARENA_*` client/MCP aliases retained for one release cycle
+
+### Added
+- PolyForm Shield 1.0.0 license (see `LICENSE`)
+- GitHub Actions CI (unit tests + frontend build)
+
 ## v0.2.0 - LLM Context Arena rebrand + multi-mode orchestration
 
 ### Breaking Changes

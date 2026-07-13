@@ -1,10 +1,10 @@
-# CLAUDE.md - Technical Notes for LLM Context Arena
+# CLAUDE.md - Technical Notes for Curia
 
 This file contains technical details, architectural decisions, and important implementation notes for future development sessions.
 
 ## Project Overview
 
-LLM Context Arena is a multi-mode deliberation system where multiple LLMs collaboratively answer user questions. The system supports various orchestration modes including Council (with anonymized peer review), Fight, Stacks, Round Robin, and Complex modes.
+**Curia** (formerly LLM Context Arena) is a multi-mode deliberation system where multiple LLMs collaboratively answer user questions. The system supports various orchestration modes including Council (with anonymized peer review), Fight, Stacks, Round Robin, and Complex modes.
 
 ## Decision log
 

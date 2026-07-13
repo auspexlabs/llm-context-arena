@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+from .env import env_prefixed
 
 
 class ArenaClient:
@@ -17,8 +18,10 @@ class ArenaClient:
         agent_id: Optional[str] = None,
         timeout: float = 600.0,
     ):
-        self.base_url = (base_url or os.getenv("ARENA_API_URL", "http://127.0.0.1:8001")).rstrip("/")
-        self.agent_id = agent_id or os.getenv("ARENA_AGENT_ID")
+        self.base_url = (
+            base_url or env_prefixed("CURIA_API_URL", "ARENA_API_URL", "http://127.0.0.1:8001")
+        ).rstrip("/")
+        self.agent_id = agent_id or env_prefixed("CURIA_AGENT_ID", "ARENA_AGENT_ID")
         self.timeout = timeout
 
     def _headers(self) -> Dict[str, str]:

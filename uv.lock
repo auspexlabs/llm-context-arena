@@ -634,6 +634,77 @@ nvtx = [
 ]
 
 [[package]]
+name = "curia"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "einops" },
+    { name = "faiss-cpu" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "langchain-community" },
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+    { name = "langchain-text-splitters" },
+    { name = "mcp" },
+    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pydantic" },
+    { name = "pylate" },
+    { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "pyyaml" },
+    { name = "sentence-transformers" },
+    { name = "torch" },
+    { name = "tree-sitter" },
+    { name = "tree-sitter-go" },
+    { name = "tree-sitter-javascript" },
+    { name = "tree-sitter-python" },
+    { name = "tree-sitter-rust" },
+    { name = "tree-sitter-typescript" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "voyager" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "einops", specifier = ">=0.8.0" },
+    { name = "faiss-cpu", specifier = ">=1.8.0" },
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "langchain-community", specifier = ">=0.3.0" },
+    { name = "langchain-core", specifier = ">=0.3.0" },
+    { name = "langchain-openai", specifier = ">=0.2.0" },
+    { name = "langchain-text-splitters", specifier = ">=0.3.0" },
+    { name = "mcp", specifier = ">=1.28.1" },
+    { name = "networkx", specifier = ">=3.0" },
+    { name = "pydantic", specifier = ">=2.9.0" },
+    { name = "pylate", specifier = ">=1.6.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "python-multipart", specifier = ">=0.0.32" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "sentence-transformers", specifier = ">=3.0.0" },
+    { name = "torch", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu126" },
+    { name = "tree-sitter", specifier = ">=0.23.0" },
+    { name = "tree-sitter-go", specifier = ">=0.23.0" },
+    { name = "tree-sitter-javascript", specifier = ">=0.23.0" },
+    { name = "tree-sitter-python", specifier = ">=0.23.0" },
+    { name = "tree-sitter-rust", specifier = ">=0.23.0" },
+    { name = "tree-sitter-typescript", specifier = ">=0.23.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
+    { name = "voyager", specifier = ">=2.1.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "datasets"
 version = "5.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1471,77 +1542,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/d4/8b/a56b97a3b8a94f850
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/95/0abb8647123c9ebbb31162bcdba3183f5f3d3bb2f752ef3d777ab715e88c/langsmith-0.9.7-py3-none-any.whl", hash = "sha256:a5ff9179b77eb0c3a0129294d30924eab13e51e2720f374372dbbc014c892911", size = 671052, upload-time = "2026-07-02T20:11:07.702Z" },
 ]
-
-[[package]]
-name = "llm-context-arena"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "einops" },
-    { name = "faiss-cpu" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "langchain-community" },
-    { name = "langchain-core" },
-    { name = "langchain-openai" },
-    { name = "langchain-text-splitters" },
-    { name = "mcp" },
-    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pydantic" },
-    { name = "pylate" },
-    { name = "python-dotenv" },
-    { name = "python-multipart" },
-    { name = "pyyaml" },
-    { name = "sentence-transformers" },
-    { name = "torch" },
-    { name = "tree-sitter" },
-    { name = "tree-sitter-go" },
-    { name = "tree-sitter-javascript" },
-    { name = "tree-sitter-python" },
-    { name = "tree-sitter-rust" },
-    { name = "tree-sitter-typescript" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "voyager" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "einops", specifier = ">=0.8.0" },
-    { name = "faiss-cpu", specifier = ">=1.8.0" },
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "langchain-community", specifier = ">=0.3.0" },
-    { name = "langchain-core", specifier = ">=0.3.0" },
-    { name = "langchain-openai", specifier = ">=0.2.0" },
-    { name = "langchain-text-splitters", specifier = ">=0.3.0" },
-    { name = "mcp", specifier = ">=1.28.1" },
-    { name = "networkx", specifier = ">=3.0" },
-    { name = "pydantic", specifier = ">=2.9.0" },
-    { name = "pylate", specifier = ">=1.6.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "python-multipart", specifier = ">=0.0.32" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "sentence-transformers", specifier = ">=3.0.0" },
-    { name = "torch", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu126" },
-    { name = "tree-sitter", specifier = ">=0.23.0" },
-    { name = "tree-sitter-go", specifier = ">=0.23.0" },
-    { name = "tree-sitter-javascript", specifier = ">=0.23.0" },
-    { name = "tree-sitter-python", specifier = ">=0.23.0" },
-    { name = "tree-sitter-rust", specifier = ">=0.23.0" },
-    { name = "tree-sitter-typescript", specifier = ">=0.23.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
-    { name = "voyager", specifier = ">=2.1.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "markdown-it-py"

@@ -1,8 +1,10 @@
 [project]
-name = "llm-context-arena"
+name = "curia"
 version = "0.1.0"
-description = "LLM Context Arena - Multi-model deliberation system"
+description = "Curia — multi-model deliberation with code RAG"
 readme = "README.md"
+license = { text = "PolyForm Shield License 1.0.0" }
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115.0",
@@ -41,7 +43,8 @@ explicit = true
 torch = { index = "pytorch-cu126" }
 
 [project.scripts]
-arena-mcp = "mcp_arena.server:main"
+curia-mcp = "mcp_arena.server:main"
+arena-mcp = "mcp_arena.server:main"  # deprecated alias — remove after DEF-011 grace period
 
 [build-system]
 requires = ["hatchling"]
@@ -59,3 +62,6 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "eval: RAG recall harness — loads ML models; run locally, skipped in CI",
+]
