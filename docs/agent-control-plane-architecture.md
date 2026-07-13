@@ -14,7 +14,7 @@ Two surfaces share one backend contract:
 | Surface | Role | Transport |
 |---------|------|-----------|
 | **HTTP API** (`:8001`) | Control plane source of truth | REST + SSE |
-| **MCP server** (`arena-mcp`) | IDE/CI agent ergonomics | stdio (default) or SSE |
+| **MCP server** (`curia-mcp`) | IDE/CI agent ergonomics | stdio (default) or SSE |
 
 MCP is a **thin HTTP client** — no duplicated arena logic.
 
@@ -89,11 +89,11 @@ Agent attribution: `X-Agent-Id` header on create.
 
 Env:
 
-- `ARENA_API_URL` — backend base (default `http://127.0.0.1:8001`)
-- `ARENA_AGENT_ID` — sent as `X-Agent-Id`
-- `ARENA_MCP_TRANSPORT` — `stdio` (default) or `sse`
+- `CURIA_API_URL` — backend base (default `http://127.0.0.1:8001`; `ARENA_API_URL` legacy alias)
+- `CURIA_AGENT_ID` — sent as `X-Agent-Id` (`ARENA_AGENT_ID` legacy alias)
+- `CURIA_MCP_TRANSPORT` — `stdio` (default) or `sse` (`ARENA_MCP_*` legacy aliases)
 
-Run: `uv run arena-mcp` or `uv run python -m mcp_arena.server`
+Run: `uv run curia-mcp` or `uv run python -m mcp_arena.server`
 
 ---
 
@@ -132,13 +132,13 @@ Run: `uv run arena-mcp` or `uv run python -m mcp_arena.server`
 ```json
 {
   "mcpServers": {
-    "llm-context-arena": {
+    "curia": {
       "command": "uv",
-      "args": ["run", "arena-mcp"],
-      "cwd": "/home/phaze/PycharmProjects/llm-council-rag",
+      "args": ["run", "curia-mcp"],
+      "cwd": "/path/to/curia",
       "env": {
-        "ARENA_API_URL": "http://127.0.0.1:8001",
-        "ARENA_AGENT_ID": "cursor"
+        "CURIA_API_URL": "http://127.0.0.1:8001",
+        "CURIA_AGENT_ID": "cursor"
       }
     }
   }

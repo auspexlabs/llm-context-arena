@@ -1,9 +1,8 @@
-"""MCP server exposing LLM Context Arena as agent tools."""
+"""MCP server exposing Curia as agent tools."""
 
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -15,12 +14,14 @@ from backend.prompts import get_prompt, list_prompts
 from backend.squad_presets import load_squad_preset
 
 from .client import ArenaClient
+from .env import env_int_prefixed, env_prefixed
 from .quality import enrich_turn_payload, enrich_turn_record
 
 mcp = FastMCP(
-    "llm-context-arena",
+    "curia",
     instructions=(
-        "LLM Context Arena control plane. Use index tools before deliberation on code. "
+        "Curia control plane — multi-model deliberation with code RAG. "
+        "Use index tools before deliberation on code. "
         "Prefer create_turn + advance_turn for stepwise council runs; send_message for full turns. "
         "Always read execution_quality.acceptable and agent_notice — if acceptable is false, "
         "inform the user and retry; do not present partial deliberation as success. "
@@ -319,12 +320,12 @@ async def update_settings(
 
 
 def main() -> None:
-    transport = os.getenv("ARENA_MCP_TRANSPORT", "stdio")
+    transport = env_prefixed("CURIA_MCP_TRANSPORT", "ARENA_MCP_TRANSPORT", "stdio")
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
-        host = os.getenv("ARENA_MCP_HOST", "127.0.0.1")
-        port = int(os.getenv("ARENA_MCP_PORT", "8010"))
+        host = env_prefixed("CURIA_MCP_HOST", "ARENA_MCP_HOST", "127.0.0.1")
+        port = env_int_prefixed("CURIA_MCP_PORT", "ARENA_MCP_PORT", 8010)
         mcp.run(transport="sse", host=host, port=port)
 
 

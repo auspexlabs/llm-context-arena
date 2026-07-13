@@ -21,7 +21,7 @@ Same local-first spirit, more ways to make models argue, and machinery for groun
 | **Context** | Per-model token budgets, chairman summarization when context is huge, manual file picker |
 | **Directives** | Inline `@norag`, `@summarize`, `@tokenbudget`, `@cite`, `@lastchair`, and more |
 | **UI** | **Observatory deck** — watch-first rail/deck/inspector for council runs; take-control stream bridge; context trace, quality panel, live refresh |
-| **Agents** | MCP control plane (`arena-mcp`) — ~30 tools wrapping the HTTP API for Cursor and other MCP clients |
+| **Agents** | MCP control plane (`curia-mcp`) — ~30 tools wrapping the HTTP API for Cursor and other MCP clients |
 
 **Roadmap:** Bicameral Mind mode, cost tracking, conditional rerank / index hygiene (see `docs/decision_log.md` DEF-004). Retrieval eval harnesses: `python -m backend.run_hyp001`, `python -m backend.run_hyp002`.
 
@@ -48,10 +48,10 @@ Run the backend, then start the MCP server (stdio — typical for Cursor):
 
 ```bash
 python -m backend.main          # or ./start.sh backend only
-uv run arena-mcp                # ARENA_API_URL defaults to http://127.0.0.1:8001
+uv run curia-mcp                # CURIA_API_URL defaults to http://127.0.0.1:8001
 ```
 
-Set `ARENA_AGENT_ID` to attribute turns. Recommended flow: `get_index_manifest` → `create_conversation` → `run_council_turn` or stepwise `create_turn` / `advance_turn`. Always check `execution_quality.acceptable` before trusting stage 3. Full tool map: [`docs/agent-control-plane-architecture.md`](docs/agent-control-plane-architecture.md).
+Set `CURIA_AGENT_ID` to attribute turns (`ARENA_*` env names still work during transition). Recommended flow: `get_index_manifest` → `create_conversation` → `run_council_turn` or stepwise `create_turn` / `advance_turn`. Always check `execution_quality.acceptable` before trusting stage 3. Full tool map: [`docs/agent-control-plane-architecture.md`](docs/agent-control-plane-architecture.md).
 
 With the observatory deck open, MCP-started runs appear via live poll — no need to drive from the UI.
 
@@ -287,7 +287,7 @@ Output allowance: 4000 tokens (`OUTPUT_TOKEN_ALLOWANCE=4000`)
 
 - **Backend:** FastAPI, Python 3.10+, async httpx, OpenRouter API
 - **Frontend:** Vanilla TypeScript observatory deck, Vite 7, `marked` + DOMPurify, highlight.js
-- **Agents:** FastMCP server in `mcp_arena/` (`arena-mcp` entry point)
+- **Agents:** FastMCP server in `mcp_arena/` (`curia-mcp` entry point; `arena-mcp` alias deprecated)
 - **RAG:** CodeRAG (tree-sitter chunking, entity/graph hybrid, RRF fusion, embedding query router), ColBERT (default) or FAISS bi-encoder, Jina v3 cross-encoder rerank (`sentence-transformers`); LM Studio only for bi-encoder embeddings; PyTorch cu126 wheel for GPU ColBERT encode
 - **Storage:** JSON files in `data/conversations/`
 
@@ -313,6 +313,7 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 - [docs/piv-001-agent-control-plane.md](docs/piv-001-agent-control-plane.md) — agent control plane, UI as observatory
 - [docs/piv-001-checklist.md](docs/piv-001-checklist.md) — implementation status (MCP, turns API, open items)
 - [docs/piv-002-observatory-ui.md](docs/piv-002-observatory-ui.md) — observatory deck spec
+- [docs/piv-003-curia-rebrand.md](docs/piv-003-curia-rebrand.md) — Curia rename tiers (A–C done; D–F deferred)
 - [PLAN.md](PLAN.md) — Feature roadmap and mode specifications
 - [COUNCIL_OG_README.md](COUNCIL_OG_README.md) — Original Karpathy README
 

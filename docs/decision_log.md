@@ -1,6 +1,6 @@
 # Decision Log
 
-Append-only decision ledger for `llm-context-arena`, in the style of
+Append-only decision ledger for **Curia** (`Auspex-Aerie/curia`), in the style of
 [ADRLight](https://github.com/Indubitable-Industries/ADRLight). One file, one
 causal history. We record *decisions, deferrals, hypotheses, discoveries, and
 incidents* — not tasks (those live in `PLAN.md` / issue trackers).
@@ -341,3 +341,20 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **date:** 2026-07-10 · **status:** active · **triggered_by:** `DEC-018`; tokenjam `core/summarize/wrap.py` + `detect.py` reuse · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-018`
 - **decision:** Defer extracting wrap/detect/restore structure gate into standalone `ContentChecker` package shared by tokenjam and arena. Interim: port or vendor minimal wrap/restore into arena summarizer path; track parity with tokenjam structure gate tests.
 - **revisit_when:** arena compression ships and duplication pain exceeds extract cost.
+
+### PIV-003: Curia rebrand — Latin product name under Auspex-Aerie
+- **date:** 2026-07-13 · **status:** accepted · **triggered_by:** org move to `Auspex-Aerie`; Latin naming consistency (`tessera`, `auspice`); observatory-as-chamber product metaphor · **docs_updated:** `docs/piv-003-curia-rebrand.md`, `README.md`, `LICENSE`, `CHANGELOG.md`, `docs/agent-control-plane-architecture.md` · **related:** `PIV-001`, `PIV-002`, `DEC-020`, `DEF-011` · **doc:** [`docs/piv-003-curia-rebrand.md`](piv-003-curia-rebrand.md)
+- **pivot:** Public name **Curia** replaces **LLM Context Arena**. Repository `Auspex-Aerie/curia`. Tiers A–C land now (user-visible strings, package `curia`, `curia-mcp`, `CURIA_*` env with `ARENA_*` MCP/client aliases). **Curia Pro** reserved for commercial hosted/enterprise line (PolyForm Shield `Licensor Line of Business`).
+- **defers:** Tier D–F renames (`mcp_arena` package path, `backend/arena.py`, config filenames, stale docstrings, external MCP configs) → `DEF-011`.
+
+### DEC-020: Execute Curia rebrand tiers A–C; PolyForm Shield + Auspex-Aerie home
+- **date:** 2026-07-13 · **status:** accepted · **triggered_by:** `PIV-003`; repo transfer `auspexlabs/llm-context-arena` → `Auspex-Aerie/curia` · **docs_updated:** `docs/decision_log.md`, `docs/piv-003-curia-rebrand.md`, `pyproject.toml`, `mcp_arena/`, `backend/main.py`, `frontend/`, `.env.example`, `.github/workflows/ci.yml` · **related:** `PIV-003`, `DEF-011`
+- **decision:** Ship rename tiers **A** (UI/API/MCP user-visible strings), **B** (`curia` Python/npm package, `curia-mcp` entry point, `arena-mcp` deprecated alias), **C** (`CURIA_*` env preferred; `ARENA_API_URL` / `ARENA_AGENT_ID` / `ARENA_MCP_*` read as fallbacks via `mcp_arena/env.py`). Keep deliberation-domain symbols (`ARENA_MODELS`, `ARENA_SQUAD`, `arena_config.yaml`) unchanged — they mean council members, not product name.
+- **rationale:** Low-breakage public rename aligned with Auspex-Aerie Latin theme; aliases avoid breaking existing Cursor MCP configs during dogfood.
+- **impact:** GitHub repo URL, README, license notices, CI on org repo; MCP server id `curia`.
+
+### DEF-011: Defer Curia rebrand tiers D–F (deep code + config paths)
+- **date:** 2026-07-13 · **status:** active · **triggered_by:** `DEC-020` · **docs_updated:** `docs/decision_log.md`, `docs/piv-003-curia-rebrand.md` · **related:** `PIV-003`, `DEC-020`
+- **decision:** Defer **Tier D** (`mcp_arena/` → `mcp_curia/`, `backend/arena.py` module rename, `ARENA_MODELS` symbol sweep, `arena_config.yaml` rename), **Tier E** (module docstrings, `CLAUDE.md`, `RAG_LMSTUDIO.md` historical lines), **Tier F** (manual Greptile/Cursor config updates, removal of `arena-mcp` script alias).
+- **revisit_when:** (a) `arena-mcp` alias removal after one release cycle with no internal usage, **or** (b) external contributors report confusion from mixed `arena_*` vs `curia_*` symbols.
+- **candidate approach:** single mechanical refactor PR for D; doc pass for E; changelog note when dropping aliases.

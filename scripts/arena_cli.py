@@ -51,7 +51,7 @@ def _cmd_effective_limits(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="arena", description="LLM Context Arena CLI")
+    parser = argparse.ArgumentParser(prog="curia", description="Curia CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_validate = sub.add_parser("config", help="Config commands")
