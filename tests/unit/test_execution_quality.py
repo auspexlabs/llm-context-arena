@@ -1,6 +1,7 @@
 """Tests for execution quality assessment."""
 
 from backend.execution_quality import (
+    CHAIRMAN_SYNTHESIS_ERROR,
     assess_execution_quality,
     assess_from_response_dict,
     format_agent_notice,
@@ -48,6 +49,37 @@ def test_all_ok_when_every_model_succeeds():
     assert quality["acceptable"] is True
     assert quality["severity"] == "ok"
     assert format_agent_notice(quality) == ""
+
+
+def test_chairman_placeholder_is_failed_not_degraded():
+    quality = assess_execution_quality(
+        mode="council",
+        metadata={
+            "arena_models": ["a", "b"],
+            "model_failures": [
+                {
+                    "model": "google/gemini-2.5-pro",
+                    "stage": "stage3",
+                    "role": "chair_final",
+                    "status": None,
+                    "message": "No response from model (unknown error)",
+                    "failure_kind": "unknown",
+                }
+            ],
+        },
+        stage1=[{"model": "a", "response": "answer"}],
+        stage3={
+            "model": "google/gemini-2.5-pro",
+            "response": CHAIRMAN_SYNTHESIS_ERROR,
+            "synthesis_failed": True,
+        },
+    )
+    assert quality["acceptable"] is False
+    assert quality["severity"] == "failed"
+    assert quality["stats"]["has_final_answer"] is False
+    assert any(i["code"] == "chairman_failed" for i in quality["issues"])
+    notice = format_agent_notice(quality)
+    assert "EXECUTION FAILED" in notice
 
 
 def test_empty_final_is_failed():

@@ -130,9 +130,25 @@ async def query_model(
 
             data = response.json()
             message = data["choices"][0]["message"]
+            content = message.get("content")
+            if content is None or str(content).strip() == "":
+                if log_error:
+                    logger.warning(
+                        "OpenRouter empty content model=%s status=200",
+                        model,
+                    )
+                return _failure_response(
+                    model,
+                    {
+                        "code": 200,
+                        "message": "Model returned empty content",
+                        "provider": (data.get("provider") or None),
+                        "raw": str(message)[:500],
+                    },
+                )
 
             return {
-                "content": message.get("content"),
+                "content": content,
                 "reasoning_details": message.get("reasoning_details"),
                 "usage": data.get("usage") or {},
                 "model": data.get("model") or model,

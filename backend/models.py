@@ -54,6 +54,20 @@ class AggregateRanking(BaseModel):
     votes: int = Field(description="Number of rankings this model received")
     rank_positions: List[int] = Field(default_factory=list, description="Individual rank positions received")
 
+    class Config:
+        extra = "allow"
+
+
+def _normalize_aggregate_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Accept legacy average_rank / rankings_count keys from stored JSON."""
+    data = dict(entry)
+    if "avg_rank" not in data and "average_rank" in data:
+        data["avg_rank"] = data["average_rank"]
+    if "votes" not in data and "rankings_count" in data:
+        data["votes"] = data["rankings_count"]
+    data.setdefault("rank_positions", [])
+    return data
+
 
 class Stage1Result(BaseModel):
     """Result of Stage 1: Initial model responses."""
@@ -87,7 +101,9 @@ class Stage2Result(BaseModel):
     ) -> "Stage2Result":
         """Create from legacy format."""
         ranking_results = [RankingResult(**r) for r in rankings]
-        agg_results = [AggregateRanking(**a) for a in (aggregate or [])]
+        agg_results = [
+            AggregateRanking(**_normalize_aggregate_entry(a)) for a in (aggregate or [])
+        ]
         return cls(
             rankings=ranking_results,
             label_to_model=label_to_model,
@@ -105,6 +121,7 @@ class Stage3Result(BaseModel):
     response: str = Field(description="Synthesized final response")
     role: str = Field(default="chair_final", description="Role identifier")
     prompt_preview: Optional[str] = Field(default=None, description="Preview of synthesis prompt")
+    prompt_full: Optional[str] = Field(default=None, description="Full synthesis prompt sent to chairman")
     est_tokens: int = Field(default=0, description="Estimated tokens in prompt")
     context_tokens: int = Field(default=0, description="Context tokens used")
     timestamp: datetime = Field(default_factory=datetime.utcnow)

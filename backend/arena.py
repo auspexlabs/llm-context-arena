@@ -13,6 +13,7 @@ from .budget import maybe_compress_mid_turn
 from .budget_metadata import SummarizeJob
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
 from .cost_tracking import apply_usage_fields, sum_usage_fields, summarize_turn_cost
+from .execution_quality import CHAIRMAN_SYNTHESIS_ERROR
 from .prompts import render_prompt
 
 COUNCIL_MODES = frozenset({"council", "baseline"})
@@ -303,7 +304,9 @@ async def stage3_synthesize_final(
             )
         return {
             "model": chairman_model,
-            "response": "Error: Unable to generate final synthesis.",
+            "response": CHAIRMAN_SYNTHESIS_ERROR,
+            "role": "chair_final",
+            "synthesis_failed": True,
         }
 
     return apply_usage_fields(
@@ -312,6 +315,7 @@ async def stage3_synthesize_final(
             "response": response.get("content", ""),
             "role": "chair_final",
             "prompt_preview": chairman_prompt[:500],
+            "prompt_full": chairman_prompt,
             "est_tokens": max(len(chairman_prompt) // 4, 1),
             "context_tokens": 0,
         },
@@ -390,12 +394,13 @@ def calculate_aggregate_rankings(
             avg_rank = sum(positions) / len(positions)
             aggregate.append({
                 "model": model,
-                "average_rank": round(avg_rank, 2),
-                "rankings_count": len(positions)
+                "avg_rank": round(avg_rank, 2),
+                "votes": len(positions),
+                "rank_positions": list(positions),
             })
 
     # Sort by average rank (lower is better)
-    aggregate.sort(key=lambda x: x['average_rank'])
+    aggregate.sort(key=lambda x: x["avg_rank"])
 
     return aggregate
 
