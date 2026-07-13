@@ -40,7 +40,7 @@ def test_patch_catalog_model_endpoint(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setattr("backend.catalog_editor.MODEL_CATALOG_PATH", catalog_path)
-    monkeypatch.setattr("backend.frozen_config.clear_frozen_cache", lambda: None)
+    monkeypatch.setattr("backend.catalog_editor.clear_frozen_cache", lambda: None)
 
     from backend.main import app
     from fastapi.testclient import TestClient

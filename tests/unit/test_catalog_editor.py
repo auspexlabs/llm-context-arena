@@ -25,7 +25,7 @@ def test_update_catalog_model_fields(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setattr("backend.catalog_editor.MODEL_CATALOG_PATH", catalog_path)
-    monkeypatch.setattr("backend.frozen_config.clear_frozen_cache", lambda: None)
+    monkeypatch.setattr("backend.catalog_editor.clear_frozen_cache", lambda: None)
 
     result = update_catalog_model_fields(
         "test/model",
@@ -44,7 +44,7 @@ def test_update_catalog_model_clears_manual_override(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setattr("backend.catalog_editor.MODEL_CATALOG_PATH", catalog_path)
-    monkeypatch.setattr("backend.frozen_config.clear_frozen_cache", lambda: None)
+    monkeypatch.setattr("backend.catalog_editor.clear_frozen_cache", lambda: None)
 
     update_catalog_model_fields("test/model", {"manual_override_limit": None})
     text = catalog_path.read_text(encoding="utf-8")
