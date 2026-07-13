@@ -1,14 +1,16 @@
-# LLM Context Arena
+# Curia
 
-> **Build in public** — development happens in the [`Auspex-Aerie`](https://github.com/Auspex-Aerie) org. Decisions are logged in [`docs/decision_log.md`](docs/decision_log.md).
+*Latin: the chamber where deliberation happens.*
 
-**Multi-model deliberation with code context — a fork of Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council).**
+> **Build in public** — [`Auspex-Aerie/curia`](https://github.com/Auspex-Aerie/curia). Decisions are logged in [`docs/decision_log.md`](docs/decision_log.md).
 
-**License:** Free to download, run, and modify for your own use. You may not ship a competing product or commercial fork — see [LICENSE](LICENSE) (PolyForm Shield 1.0.0). A **Pro** edition with hosted and enterprise features is planned.
+**Multi-model deliberation with code context** — a fork of Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council).
 
-All credit to [Karpathy](https://twitter.com/karpathy) for the original idea: put several frontier models in a room, let them answer independently, review each other anonymously, and have a chairman synthesize a final answer. That three-stage council is elegant and we kept it as the default mode.
+**License:** Free to download, run, and modify for your own use. You may not ship a competing product or commercial fork — see [LICENSE](LICENSE) (PolyForm Shield 1.0.0). **Curia Pro** (hosted and enterprise features) is planned.
 
-This fork extends that foundation into an **arena** — same local-first vibe-coded spirit, more ways to make models argue, and machinery for grounding answers in your codebase.
+All credit to [Karpathy](https://twitter.com/karpathy) for the original idea: put several frontier models in a room, let them answer independently, review each other anonymously, and have a chairman synthesize a final answer. That three-stage council is the spine of Curia — we kept it as the default mode and built an observatory around it.
+
+Same local-first spirit, more ways to make models argue, and machinery for grounding answers in your codebase.
 
 ## What changed in this fork
 
@@ -23,7 +25,7 @@ This fork extends that foundation into an **arena** — same local-first vibe-co
 
 **Roadmap:** Bicameral Mind mode, cost tracking, conditional rerank / index hygiene (see `docs/decision_log.md` DEF-004). Retrieval eval harnesses: `python -m backend.run_hyp001`, `python -m backend.run_hyp002`.
 
-**Repo:** [github.com/Auspex-Aerie/llm-context-arena](https://github.com/Auspex-Aerie/llm-context-arena)
+**Repo:** [github.com/Auspex-Aerie/curia](https://github.com/Auspex-Aerie/curia)
 
 ---
 
@@ -322,7 +324,7 @@ Source is available under the [PolyForm Shield License 1.0.0](LICENSE). In short
 
 - **Use** — download, run, and modify for personal, research, and internal workflows
 - **Share** — redistribute only with the same license and notices
-- **Don't compete** — you may not offer a product that substitutes for LLM Context Arena or the planned Pro edition
+- **Don't compete** — you may not offer a product that substitutes for Curia or Curia Pro
 
 Commercial licensing for competing or embedded offerings: contact Auspex Labs.
 
@@ -330,6 +332,6 @@ Commercial licensing for competing or embedded offerings: contact Auspex Labs.
 
 ## Acknowledgments
 
-**Massive thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for [llm-council](https://github.com/karpathy/llm-council). The original 3-stage council (answer → anonymous peer review → chairman synthesis) is the spine of this project.
+**Massive thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for [llm-council](https://github.com/karpathy/llm-council). The original 3-stage council (answer → anonymous peer review → chairman synthesis) is the spine of Curia.
 
 Karpathy's vibe code philosophy — minimal, readable, hackable — is alive here. Contributions and feedback welcome within the license terms above.

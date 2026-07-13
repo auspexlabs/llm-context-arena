@@ -1,7 +1,7 @@
 [project]
 name = "llm-context-arena"
 version = "0.1.0"
-description = "LLM Context Arena - Multi-model deliberation system"
+description = "Curia — multi-model deliberation with code RAG"
 readme = "README.md"
 license = "PolyForm-Shield-1.0.0"
 license-files = ["LICENSE"]
