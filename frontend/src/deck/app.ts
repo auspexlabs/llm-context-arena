@@ -1,22 +1,34 @@
 import { api } from './api';
 import { formatUsd, turnCostFromMessage } from './cost';
+import { userQueryBefore } from './normalize';
+import { buildBreadcrumb } from './breadcrumb';
+import { renderInspector } from './inspector';
+import { anchorOffsetIn, consumeScrollAnchor, restoreViewportScroll } from './scroll-anchor';
+import { buildTurnContext } from './turn-context';
 import {
   assistantMessages,
   getState,
   patch,
   selectConversation,
-  setFocusedStep,
+  selectTurn,
+  setDeckView,
   setTheme,
   subscribe,
   updateConversations,
 } from './store';
-import type { CouncilStepId } from './types';
+import type { DeckView } from './types';
 import { runTurnStream } from './stream';
-import { resetModelTab, renderCouncilViewport } from './viewers/council';
+import { resetModelTab } from './viewers/council';
+import { renderDeckViewport } from './viewers/deck';
 import './deck.css';
 
-const STEP_IDS: CouncilStepId[] = ['answers', 'rankings', 'verdict'];
-const STEP_LABELS = ['1 Answers', '2 Rankings', '3 Verdict'];
+const TIMELINE: { id: DeckView; label: string }[] = [
+  { id: 'context', label: 'Context' },
+  { id: 'answers', label: '1 Answers' },
+  { id: 'rankings', label: '2 Rankings' },
+  { id: 'verdict', label: '3 Verdict' },
+  { id: 'quality', label: 'Quality' },
+];
 
 let abortCtrl: AbortController | null = null;
 let els: Record<string, HTMLElement> = {};
@@ -38,7 +50,10 @@ export function mountApp(root: HTMLElement) {
     verdict: root.querySelector('#verdict')!,
     foot: root.querySelector('#foot')!,
   };
-  subscribe(render);
+  subscribe((scope) => {
+    if (scope === 'viewport') renderViewportOnly();
+    else render();
+  });
   void bootstrap();
 }
 
@@ -70,19 +85,40 @@ async function refreshConversations() {
 function render() {
   renderRail();
   renderDeck();
-  renderInspector();
+  renderInspectorPanel();
   renderVerdict();
   renderFoot();
+}
+
+function renderViewportOnly() {
+  const vp = els.deck.querySelector('#viewport') as HTMLElement | null;
+  if (!vp) {
+    renderDeck();
+    return;
+  }
+  const scrollTop = vp.scrollTop;
+  const anchor = consumeScrollAnchor();
+  const anchorRelTop = anchor ? anchorOffsetIn(vp, anchor) : null;
+  const s = getState();
+  const assistants = assistantMessages(s.conversation);
+  const msg = assistants[s.selectedTurnIndex] ?? null;
+  const isLast = s.selectedTurnIndex === assistants.length - 1;
+  const running = s.isRunning && isLast;
+  renderDeckViewport(vp, s.deckView, s.conversation, msg, s.selectedTurnIndex, running);
+  requestAnimationFrame(() => restoreViewportScroll(vp, scrollTop, anchor, anchorRelTop));
 }
 
 function renderRail() {
   const s = getState();
   const assistants = assistantMessages(s.conversation);
+  const messages = s.conversation?.messages || [];
   const turnsHtml = assistants
     .map((msg, i) => {
       const isLast = i === assistants.length - 1;
       const status = s.isRunning && isLast ? 'running' : msg.stage3?.response ? 'complete' : 'idle';
       const cost = turnCostFromMessage(msg);
+      const query = userQueryBefore(messages, i);
+      const queryPreview = query ? query.slice(0, 48) + (query.length > 48 ? '…' : '') : '';
       const meta =
         status === 'running'
           ? `<span style="color:var(--accent)">● running</span>`
@@ -91,30 +127,41 @@ function renderRail() {
             : `<span class="meta">pending</span>`;
       return `
         <button type="button" class="turn-item ${status === 'complete' ? 'complete' : ''} ${i === s.selectedTurnIndex ? 'on' : ''}" data-turn="${i}">
-          <div class="title">Turn ${i + 1}</div>
+          <div class="title">Turn ${i + 1}${queryPreview ? ` · ${queryPreview.replace(/</g, '')}` : ''}</div>
           <div class="meta">${meta}</div>
           ${status === 'complete' ? `<div class="cost">${formatUsd(cost.cost_usd)} · ${cost.total_tokens.toLocaleString()} tok</div>` : ''}
         </button>`;
     })
     .join('');
 
+  const sessionTitle = s.conversation?.title || 'No session';
+  const sessionMode = s.conversation?.mode || 'council';
+
   els.rail.innerHTML = `
     <div class="rail-head">
-      <h2>Sessions</h2>
+      <h2>Observatory</h2>
       <button type="button" class="rail-btn" id="btn-settings">⚙</button>
     </div>
-    ${s.conversations
-      .map(
-        (c) => `
-      <button type="button" class="session ${c.id === s.conversationId ? 'on' : ''}" data-session="${c.id}">
-        <div class="title">${c.title || 'Session'} · ${c.mode || 'council'}</div>
-        <div class="meta">${c.message_count} messages</div>
-      </button>`
-      )
-      .join('')}
-    <h2 style="margin-top:16px">Turns</h2>
-    ${turnsHtml || '<p class="meta">No turns yet — take control to start.</p>'}
-    <button type="button" class="rail-btn" id="btn-new" style="margin-top:12px">+ New session</button>
+    <div class="rail-turns">
+      <div class="rail-turns-head">
+        <h2>Turns</h2>
+        <span class="meta">${sessionTitle} · ${sessionMode}</span>
+      </div>
+      ${turnsHtml || '<p class="meta">No turns yet — take control to start.</p>'}
+    </div>
+    <button type="button" class="rail-btn" id="btn-new">+ New session</button>
+    <div class="rail-sessions">
+      <h2>Sessions</h2>
+      ${s.conversations
+        .map(
+          (c) => `
+        <button type="button" class="session ${c.id === s.conversationId ? 'on' : ''}" data-session="${c.id}">
+          <div class="title">${c.title || 'Session'} · ${c.mode || 'council'}</div>
+          <div class="meta">${c.message_count} messages</div>
+        </button>`
+        )
+        .join('')}
+    </div>
   `;
 
   els.rail.querySelector('#btn-settings')?.addEventListener('click', () => openSettings());
@@ -129,7 +176,7 @@ function renderRail() {
   });
   els.rail.querySelectorAll('[data-turn]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      patch({ selectedTurnIndex: Number((btn as HTMLElement).dataset.turn) });
+      selectTurn(Number((btn as HTMLElement).dataset.turn));
       resetModelTab();
     });
   });
@@ -142,70 +189,88 @@ function renderDeck() {
   const isLast = s.selectedTurnIndex === assistants.length - 1;
   const running = s.isRunning && isLast;
   const complete = !!msg?.stage3?.response;
-  const mode = s.conversation?.mode || 'council';
-
-  const stepsHtml = STEP_IDS.map((id, i) => {
-    let cls = 'step-btn';
-    if (s.focusedStep === id) cls += ' on';
-    if (running) {
-      if (id === 'answers' && msg?.stage1) cls += ' done';
-      else if (id === 'rankings' && msg?.loading?.stage2) cls += ' live';
-      else if (id === 'rankings' && msg?.stage2) cls += ' done';
-      else if (id === 'verdict' && msg?.loading?.stage3) cls += ' live';
-    } else if (complete) {
-      cls += ' done';
-    }
-    return `<button type="button" class="${cls}" data-step="${id}">${STEP_LABELS[i]}</button>`;
-  }).join('');
-
-  const statusCls = running ? 'status-run' : complete ? 'status-done' : '';
+  const turnCtx = buildTurnContext(s.conversation, msg, s.selectedTurnIndex);
   const statusLabel = running ? 'running' : complete ? 'complete' : 'idle';
 
+  const stepsHtml = TIMELINE.map(({ id, label }) => {
+    let cls = 'step-btn';
+    if (s.deckView === id) cls += ' on';
+    if (id === 'context' && turnCtx.contextChunkCount > 0) cls += ' done';
+    else if (running) {
+      if (id === 'answers' && msg?.stage1?.length) cls += ' done';
+      else if (id === 'rankings' && msg?.loading?.stage2) cls += ' live';
+      else if (id === 'rankings' && msg?.stage2?.length) cls += ' done';
+      else if (id === 'verdict' && msg?.loading?.stage3) cls += ' live';
+    } else if (id === 'quality' && (msg?.metadata?.model_failures as unknown[] | undefined)?.length) {
+      cls += ' done';
+    } else if (complete && id !== 'context' && id !== 'quality') {
+      cls += ' done';
+    }
+    return `<button type="button" class="${cls}" data-deck-view="${id}">${label}</button>`;
+  }).join('');
+
+  const turnStrip = assistants
+    .map(
+      (_, i) =>
+        `<button type="button" class="turn-chip ${i === s.selectedTurnIndex ? 'on' : ''}" data-turn-chip="${i}">Turn ${i + 1}</button>`
+    )
+    .join('');
+
+  const bc = buildBreadcrumb(turnCtx, s.selectedTurnIndex, statusLabel);
+  const userQuery = userQueryBefore(s.conversation?.messages || [], s.selectedTurnIndex);
+  const runningBanner =
+    running && userQuery
+      ? `<div class="running-banner">
+          <span class="running-badge">Turn ${s.selectedTurnIndex + 1} running</span>
+          <p class="running-query">${userQuery.replace(/</g, '&lt;')}</p>
+          ${s.modeProgress.label ? `<p class="meta">${s.modeProgress.label}${s.modeProgress.activeModel ? ` · ${String(s.modeProgress.activeModel).split('/').pop()}` : ''}</p>` : ''}
+        </div>`
+      : '';
+
   els.deck.innerHTML = `
-    <div class="hdr"><b>${mode}</b> · Turn ${s.selectedTurnIndex + 1} · <span class="${statusCls}">${statusLabel}</span>
+    <div class="hdr breadcrumb">${bc}
       ${running && s.modeProgress.total ? ` · step ${s.modeProgress.current}/${s.modeProgress.total}` : ''}
     </div>
+    ${runningBanner}
+    ${assistants.length > 1 ? `<div class="turn-strip">${turnStrip}</div>` : ''}
     <div class="timeline">${stepsHtml}</div>
     <div class="viewport" id="viewport"></div>
   `;
 
-  els.deck.querySelectorAll('[data-step]').forEach((btn) => {
+  els.deck.querySelectorAll('[data-deck-view]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      setFocusedStep((btn as HTMLElement).dataset.step as CouncilStepId);
+      setDeckView((btn as HTMLElement).dataset.deckView as DeckView);
       resetModelTab();
+    });
+  });
+  els.deck.querySelectorAll('[data-turn-chip]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectTurn(Number((btn as HTMLElement).dataset.turnChip));
+      resetModelTab();
+    });
+  });
+  els.deck.querySelectorAll('[data-bc-context]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setDeckView('context');
+      resetModelTab();
+    });
+  });
+  els.deck.querySelectorAll('[data-bc-quality]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setDeckView('quality');
     });
   });
 
   const vp = els.deck.querySelector('#viewport') as HTMLElement;
-  renderCouncilViewport(vp, msg, s.focusedStep, running);
+  renderDeckViewport(vp, s.deckView, s.conversation, msg, s.selectedTurnIndex, running);
 }
 
-function renderInspector() {
+function renderInspectorPanel() {
   const s = getState();
   const msg = assistantMessages(s.conversation)[s.selectedTurnIndex];
-  const meta = msg?.metadata || {};
-  const ctx = msg?.contextSources as unknown[] | undefined;
-  const eq = meta.execution_quality as Record<string, unknown> | undefined;
-  const agg = meta.aggregate_rankings as Record<string, unknown>[] | undefined;
-
-  const ctxHtml = ctx?.length
-    ? `<p><b>RAG</b>${ctx.length} sources</p>`
-    : '<p>No context trace</p>';
-  const rankHtml = agg?.length
-    ? agg.map((a, i) => `<p><b>#${i + 1}</b> ${String(a.model || '').split('/').pop()}</p>`).join('')
-    : '<p>—</p>';
-  const qHtml = eq
-    ? `<p><b>${eq.severity || 'ok'}</b></p><p>${eq.acceptable ? 'acceptable' : 'review needed'}</p>`
-    : '<p>—</p>';
-
-  els.inspector.innerHTML = `
-    <div class="insp-h"><div class="on">Context</div><div class="on">Rankings</div><div class="on">Quality</div></div>
-    <div class="insp-b">
-      <div class="col">${ctxHtml}<p class="meta">mode: ${String(meta.mode || s.conversation?.mode || '')}</p></div>
-      <div class="col">${rankHtml}</div>
-      <div class="col">${qHtml}</div>
-    </div>
-  `;
+  renderInspector(els.inspector, msg, s.selectedTurnIndex, s.conversation?.mode || 'council');
 }
 
 function renderVerdict() {
@@ -217,14 +282,20 @@ function renderVerdict() {
     els.verdict.innerHTML = '<span class="label">Verdict</span> — synthesis after stage 3';
     return;
   }
-  els.verdict.className = 'verdict-lane';
+  const on = s.deckView === 'verdict' ? ' on' : '';
+  els.verdict.className = `verdict-lane clickable${on}`;
   const excerpt = text.length > 400 ? `${text.slice(0, 400)}…` : text;
-  els.verdict.innerHTML = `<span class="label">Verdict</span><div class="body">${excerpt.replace(/</g, '&lt;')}</div>`;
+  els.verdict.innerHTML = `<button type="button" class="verdict-hit" id="verdict-hit"><span class="label">Verdict</span><div class="body">${excerpt.replace(/</g, '&lt;')}</div><span class="insp-hint">Open full synthesis →</span></button>`;
+  els.verdict.querySelector('#verdict-hit')?.addEventListener('click', () => setDeckView('verdict'));
 }
 
 function renderFoot() {
   const s = getState();
-  const note = s.isRunning ? 'Watching · SSE connected' : s.takeControl ? 'You are driving' : 'Turn complete · watching idle';
+  const note = s.isRunning
+    ? 'Arena running — see your message in the banner above · Answers tab updates live'
+    : s.takeControl
+      ? 'You are driving — Run turn sends the next message'
+      : 'Turn complete · Take control to send another';
 
   els.foot.innerHTML = `
     <span class="foot-note">${note}</span>
@@ -248,6 +319,7 @@ async function submitQuery() {
   const content = ta?.value.trim();
   if (!content) return;
   if (ta) ta.value = '';
+  setDeckView('answers');
   abortCtrl?.abort();
   abortCtrl = new AbortController();
   try {

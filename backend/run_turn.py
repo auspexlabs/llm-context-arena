@@ -109,7 +109,10 @@ def _assistant_metadata(
         "cost": metadata.get("cost"),
         "context_from_last_chair": ctx.context_from_last_chair,
         "model_failures": metadata.get("model_failures") or [],
+        "execution_quality": metadata.get("execution_quality"),
         "summarize_targets": metadata.get("summarize_targets") or {},
+        "summarize_jobs": metadata.get("summarize_jobs") or [],
+        "budget_decisions": metadata.get("budget_decisions") or {},
         "observation_pending": metadata.get("observation_pending") or [],
     }
 
@@ -241,6 +244,7 @@ async def run_turn(
     response_dict["warnings"] = list(ctx.warnings or [])
     quality = assess_from_response_dict(response_dict)
     response_dict["execution_quality"] = quality
+    metadata["execution_quality"] = quality
     record_turn_metrics(metadata=metadata, quality=quality)
     notice = format_agent_notice(quality)
     if notice:

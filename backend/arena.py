@@ -312,6 +312,7 @@ async def stage3_synthesize_final(
             "response": response.get("content", ""),
             "role": "chair_final",
             "prompt_preview": chairman_prompt[:500],
+            "prompt_full": chairman_prompt,
             "est_tokens": max(len(chairman_prompt) // 4, 1),
             "context_tokens": 0,
         },
@@ -390,12 +391,13 @@ def calculate_aggregate_rankings(
             avg_rank = sum(positions) / len(positions)
             aggregate.append({
                 "model": model,
-                "average_rank": round(avg_rank, 2),
-                "rankings_count": len(positions)
+                "avg_rank": round(avg_rank, 2),
+                "votes": len(positions),
+                "rank_positions": list(positions),
             })
 
     # Sort by average rank (lower is better)
-    aggregate.sort(key=lambda x: x['average_rank'])
+    aggregate.sort(key=lambda x: x["avg_rank"])
 
     return aggregate
 

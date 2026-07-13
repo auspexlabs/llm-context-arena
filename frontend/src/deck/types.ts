@@ -1,5 +1,10 @@
 export type CouncilStepId = 'answers' | 'rankings' | 'verdict';
 
+/** Deck viewport — council steps plus inspector-linked panels. */
+export type DeckView = 'context' | CouncilStepId | 'quality';
+
+export type InspectorColumn = 'context' | 'rankings' | 'quality';
+
 export type TurnStatus = 'running' | 'complete' | 'idle';
 
 export interface ConversationSummary {
@@ -71,6 +76,13 @@ export interface DeckState {
   conversation: Conversation | null;
   selectedTurnIndex: number;
   focusedStep: CouncilStepId;
+  deckView: DeckView;
+  inspectorColumn: InspectorColumn;
+  ragListExpanded: boolean;
+  ragChunksExpanded: string[];
+  /** Stage-1 model index whose prompt is shown in Context view (-1 = shared/first). */
+  contextPromptModel: number;
+  failuresExpanded: string[];
   takeControl: boolean;
   isRunning: boolean;
   modeProgress: ModeProgress;

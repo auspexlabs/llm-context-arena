@@ -288,6 +288,18 @@ incidents* — not tasks (those live in `PLAN.md` / issue trackers).
 - **decision:** Extract `run_turn()` as the single full-turn path (sync + stream). Add council-only turn sidecar (`TurnRecord` + `TurnStore`) with `POST/GET/DELETE turns` and `advance` step API. Ship `mcp_arena` MCP server (stdio) as httpx wrapper — no duplicated arena logic. MCP `run_council_turn` convenience chains create + 3× advance.
 - **defers:** `await_user`/resume (Phase 2), non-council step checkpoints, `prepare_context` standalone tool, agent SDK package.
 
+### DEC-019: Defer unified content renderer; ship CodeRAG-first context trace
+- **date:** 2026-07-13 · **status:** accepted · **triggered_by:** PIV-002a context view — chairman panel mislabeled; CodeRAG bundles escaped as plain text; markdown/code heuristics fail on mid-chunk tables and citation headers · **docs_updated:** `docs/decision_log.md`, `frontend/src/deck/content-trace.ts`, `frontend/src/deck/viewers/context.ts`, `frontend/src/deck/turn-context.ts`, `backend/arena.py` · **related:** `PIV-002`, `DEC-018`, `DEF-010`
+- **decision:** **Do not** treat generic markdown heuristics as the long-term renderer. **Interim (now):** first-class **CodeRAG bundle** parsing (`# Relevant repository context`, `--- citation ---`, per-citation hljs); honest context-trace labels (bare user question vs injected stage-1 message vs stage-3 chairman sections); persist `stage3.prompt_full`. **Deferred (`DEF-010`):** AST-boundary chunk display, table repair for partial markdown, structured `prompt_parts[]` from backend, shared renderer for LLM output + RAG + traces.
+- **rationale:** Arena injects RAG into `user_query` for all stages — chairman `prompt_preview` duplicated RAG and truncated before stage 1/2 bodies. Mid-table and fence-less code need retrieval metadata, not `marked`/`hljs` guessing.
+- **impact:** Observatory context trace readable for CodeRAG; chairman panel explains system-composed synthesis message. Full pretty-print of arbitrary repo/docs content remains out of scope until DEF-010.
+
+### DEF-010: Defer unified trace/content renderer (AST + structured prompt parts)
+- **date:** 2026-07-13 · **status:** active · **triggered_by:** `DEC-019` · **docs_updated:** `docs/decision_log.md` · **related:** `DEC-019`, `PIV-002`, `DEC-018`
+- **decision:** Defer end-to-end renderer covering partial markdown tables, ambiguous fences, multi-language paste, and chairman/stage prompts. Interim: CodeRAG citation blocks + per-citation syntax highlight (`content-trace.ts`).
+- **revisit_when:** (a) users routinely inspect non-CodeRAG manual context or foreign markdown in traces, **or** (b) PIV-002b ships execution API `prompt_parts` / chunk `content_type` from backend.
+- **candidate design:** backend emits `{kind: coderag|code|md|prose, citation?, lang?, body}` per block; frontend single `renderTraceBlock()`; optional tokenjam/structure_wrap parity for display-only wraps.
+
 ### PIV-002: Observatory UI greenfield — locked visual spec
 - **date:** 2026-07-13 · **status:** accepted · **triggered_by:** `PIV-001` Phase 2; chat-first UI unfit for observation deck · **docs_updated:** `docs/piv-002-observatory-ui.md`, `docs/mockups/observatory-deck.html` · **related:** `PIV-001`, `DEC-015`, `DEC-018` · **doc:** [`docs/piv-002-observatory-ui.md`](piv-002-observatory-ui.md)
 - **pivot:** **Cutover** greenfield deck UI (no legacy chat shell). Three-zone layout: **Rail 280px** · **Deck** · **Inspector 420px** (context + rankings + quality, all visible). Base typography **16px**; complete turns show duration/cost in rail, filled verdict lane, review-complete viewport. **Take control** always visible, muted until engaged. Stack: Vite + vanilla TS, SSE watch, FastAPI unchanged.

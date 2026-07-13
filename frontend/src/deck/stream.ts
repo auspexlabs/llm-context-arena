@@ -1,6 +1,6 @@
 import { api } from './api';
 import type { AssistantMessage, Conversation } from './types';
-import { getState, patch, setModeProgress } from './store';
+import { getState, patch, setDeckView, setModeProgress } from './store';
 
 function ensureAssistant(conv: Conversation): AssistantMessage {
   const last = conv.messages[conv.messages.length - 1];
@@ -44,7 +44,13 @@ export async function runTurnStream(
     metadata: null,
     loading: { stage1: false, stage2: false, stage3: false },
   });
-  patch({ conversation: conv, isRunning: true, selectedTurnIndex: conv.messages.filter((m) => m.role === 'assistant').length - 1 });
+  const turnIdx = conv.messages.filter((m) => m.role === 'assistant').length - 1;
+  setDeckView('answers');
+  patch({
+    conversation: conv,
+    isRunning: true,
+    selectedTurnIndex: turnIdx,
+  });
 
   await api.sendMessageStream(
     conversationId,
@@ -95,6 +101,7 @@ export async function runTurnStream(
               ...(d.steps ? { steps: d.steps } : {}),
               ...(d.cost ? { cost: d.cost } : {}),
               ...(d.model_failures ? { model_failures: d.model_failures } : {}),
+              ...(d.execution_quality ? { execution_quality: d.execution_quality } : {}),
               mode: d.mode ?? a.metadata?.mode,
             };
           });
