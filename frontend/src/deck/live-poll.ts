@@ -18,6 +18,7 @@ import {
 
 const POLL_MS = 4000;
 let timer: ReturnType<typeof setInterval> | null = null;
+let tickInFlight = false;
 let knownIds = new Set<string>();
 let bootstrapped = false;
 
@@ -86,6 +87,8 @@ async function pollConversation(id: string) {
 }
 
 async function tick() {
+  if (tickInFlight) return;
+  tickInFlight = true;
   try {
     const convs = await api.listConversations();
     updateConversations(convs);
@@ -120,6 +123,8 @@ async function tick() {
     }
   } catch (e) {
     patch({ pollError: e instanceof Error ? e.message : 'Poll failed' });
+  } finally {
+    tickInFlight = false;
   }
 }
 
