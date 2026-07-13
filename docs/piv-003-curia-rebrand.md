@@ -59,6 +59,9 @@ Implementation: `mcp_arena/env.py` (`env_prefixed`).
 
 ### Tier F — external (manual)
 
-- [ ] Developer Cursor MCP configs
+- [x] Local checkout path → `/home/phaze/PycharmProjects/curia` (2026-07-13)
+- [ ] Developer Cursor MCP `cwd` updated to match
 - [ ] Greptile / CI app repo mapping after org transfer
 - [ ] Remove `arena-mcp` script alias after grace period
+
+**Handoff:** [`curia-handoff.md`](curia-handoff.md)

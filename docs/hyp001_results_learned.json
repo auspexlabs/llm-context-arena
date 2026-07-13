@@ -1,5 +1,5 @@
 {
-  "repo": "/home/phaze/PycharmProjects/llm-council-rag/tests/fixtures/golden_repo",
+  "repo": "/home/phaze/PycharmProjects/curia/tests/fixtures/golden_repo",
   "query_count": 18,
   "k": 10,
   "colbert_mode": "learned",

@@ -314,6 +314,7 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 - [docs/piv-001-checklist.md](docs/piv-001-checklist.md) — implementation status (MCP, turns API, open items)
 - [docs/piv-002-observatory-ui.md](docs/piv-002-observatory-ui.md) — observatory deck spec
 - [docs/piv-003-curia-rebrand.md](docs/piv-003-curia-rebrand.md) — Curia rename tiers (A–C done; D–F deferred)
+- [docs/curia-handoff.md](docs/curia-handoff.md) — resume here: paths, MCP config, dogfood loop
 - [PLAN.md](PLAN.md) — Feature roadmap and mode specifications
 - [COUNCIL_OG_README.md](COUNCIL_OG_README.md) — Original Karpathy README
 

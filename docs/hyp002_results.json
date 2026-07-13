@@ -1,6 +1,6 @@
 {
-  "golden_repo": "/home/phaze/PycharmProjects/llm-council-rag/tests/fixtures/golden_repo",
-  "arena_repo": "/home/phaze/PycharmProjects/llm-council-rag/backend",
+  "golden_repo": "/home/phaze/PycharmProjects/curia/tests/fixtures/golden_repo",
+  "arena_repo": "/home/phaze/PycharmProjects/curia/backend",
   "query_count": 18,
   "probe_count": 6,
   "k": 10,
