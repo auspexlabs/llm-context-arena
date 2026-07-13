@@ -156,6 +156,18 @@
   border-color: var(--border);
 }
 
+.theme-dark .settings-tab {
+  background: #17130f;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.theme-dark .settings-tab.active {
+  background: #20160f;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .theme-dark .reindex-status,
 .theme-dark .reindex-root {
   color: var(--muted);
@@ -176,6 +188,31 @@
   padding: 12px;
   border-bottom: 1px solid #e0e0e0;
   background: #fff;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.settings-tab {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-tab.active {
+  background: #e8f0fe;
+  border-color: #4a90e2;
+  color: #2a5f9e;
+  font-weight: 600;
 }
 
 .settings-field {

@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from ..catalog_editor import catalog_meta_summary, list_catalog_models, update_catalog_model_fields
 from ..catalog_refresh import refresh_catalog, validate_frozen_config
 from ..dependencies import load_runtime_settings
 from ..observations import get_observation_service
@@ -18,6 +19,20 @@ router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 class ObservationActionResponse(BaseModel):
     ok: bool
     observation: Optional[Dict[str, Any]] = None
+
+
+class CatalogModelUpdateRequest(BaseModel):
+    tags: Optional[List[str]] = None
+    model_modifier: Optional[float] = None
+    manual_override_limit: Optional[int] = None
+    clear_manual_override: bool = False
+
+
+class CatalogModelUpdateResponse(BaseModel):
+    ok: bool
+    model_id: str
+    entry: Dict[str, Any]
+    requires_restart: bool = True
 
 
 @router.post("/refresh")
@@ -100,3 +115,48 @@ async def config_validate() -> Dict[str, Any]:
     """Validate arena_config.yaml and model_catalog.yaml schemas."""
     ok, issues = validate_frozen_config()
     return {"ok": ok, "issues": issues}
+
+
+@router.get("/models")
+async def catalog_models() -> Dict[str, Any]:
+    """List all models in model_catalog.yaml (DEF-008 editor read path)."""
+    return list_catalog_models()
+
+
+@router.get("/meta")
+async def catalog_meta() -> Dict[str, Any]:
+    """Catalog refresh metadata and restart hints for the UI."""
+    return catalog_meta_summary()
+
+
+@router.patch("/models/{model_id:path}", response_model=CatalogModelUpdateResponse)
+async def patch_catalog_model(
+    model_id: str,
+    body: CatalogModelUpdateRequest,
+) -> CatalogModelUpdateResponse:
+    """Update tags, modifiers, or manual override for one catalog model."""
+    fields: Dict[str, Any] = {}
+    if body.tags is not None:
+        fields["tags"] = body.tags
+    if body.model_modifier is not None:
+        fields["model_modifier"] = body.model_modifier
+    if body.clear_manual_override:
+        fields["manual_override_limit"] = None
+    elif body.manual_override_limit is not None:
+        fields["manual_override_limit"] = body.manual_override_limit
+    if not fields:
+        raise HTTPException(status_code=400, detail="No editable fields provided")
+
+    try:
+        result = update_catalog_model_fields(model_id, fields)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Model not in catalog: {model_id}")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return CatalogModelUpdateResponse(
+        ok=True,
+        model_id=result["model_id"],
+        entry=result["entry"],
+        requires_restart=result.get("requires_restart", True),
+    )

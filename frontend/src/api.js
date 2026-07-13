@@ -269,4 +269,69 @@ export const api = {
     }
     return response.json();
   },
+
+  async catalogEffectiveLimits(squad) {
+    const url = new URL(`${API_BASE}/api/catalog/effective-limits`);
+    if (squad) url.searchParams.set('squad', squad);
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error('Failed to load effective limits');
+    return response.json();
+  },
+
+  async catalogPendingObservations(squad) {
+    const url = new URL(`${API_BASE}/api/catalog/observations/pending`);
+    if (squad) url.searchParams.set('squad', squad);
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error('Failed to load pending observations');
+    return response.json();
+  },
+
+  async catalogRefresh(force = false) {
+    const url = new URL(`${API_BASE}/api/catalog/refresh`);
+    if (force) url.searchParams.set('force', 'true');
+    const response = await fetch(url.toString(), { method: 'POST' });
+    if (!response.ok) throw new Error('Catalog refresh failed');
+    return response.json();
+  },
+
+  async catalogValidate() {
+    const response = await fetch(`${API_BASE}/api/catalog/validate`);
+    if (!response.ok) throw new Error('Catalog validate failed');
+    return response.json();
+  },
+
+  async catalogMeta() {
+    const response = await fetch(`${API_BASE}/api/catalog/meta`);
+    if (!response.ok) throw new Error('Failed to load catalog meta');
+    return response.json();
+  },
+
+  async catalogUpdateModel(modelId, payload) {
+    const response = await fetch(
+      `${API_BASE}/api/catalog/models/${encodeURIComponent(modelId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!response.ok) throw new Error('Failed to update catalog model');
+    return response.json();
+  },
+
+  async catalogAcceptObservation(obsId) {
+    const response = await fetch(`${API_BASE}/api/catalog/observations/${obsId}/accept`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error('Failed to accept observation');
+    return response.json();
+  },
+
+  async catalogDeclineObservation(obsId) {
+    const response = await fetch(`${API_BASE}/api/catalog/observations/${obsId}/decline`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error('Failed to decline observation');
+    return response.json();
+  },
 };

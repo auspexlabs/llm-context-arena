@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { formatUsd } from '../costUtils';
+import CatalogEditor from './CatalogEditor';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -15,6 +16,7 @@ export default function Sidebar({
 }) {
   const [mode, setMode] = useState('council');
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('squad');
   const [settings, setSettings] = useState({ arena_models: [], chairman_model: '', repo_root: '' });
   const [settingsStatus, setSettingsStatus] = useState('');
 
@@ -111,6 +113,27 @@ export default function Sidebar({
 
       {showSettings && (
         <div className="settings-panel">
+          <div className="settings-tabs">
+            <button
+              type="button"
+              className={`settings-tab ${settingsTab === 'squad' ? 'active' : ''}`}
+              onClick={() => setSettingsTab('squad')}
+            >
+              Squad
+            </button>
+            <button
+              type="button"
+              className={`settings-tab ${settingsTab === 'catalog' ? 'active' : ''}`}
+              onClick={() => setSettingsTab('catalog')}
+            >
+              Catalog
+            </button>
+          </div>
+
+          {settingsTab === 'catalog' ? (
+            <CatalogEditor squad={settings.arena_squad || 'normal'} />
+          ) : (
+            <>
           <div className="settings-field">
             <label>Arena squad</label>
             <select
@@ -184,6 +207,8 @@ export default function Sidebar({
             </button>
             {settingsStatus && <span className="settings-status">{settingsStatus}</span>}
           </div>
+            </>
+          )}
         </div>
       )}
 

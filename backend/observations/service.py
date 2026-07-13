@@ -175,6 +175,7 @@ class ObservationService:
             breakdown = self.resolver.breakdown(model_id)
             accepted = self.store.get_accepted(model_id)
             pending = [p for p in self.store.list_pending() if p.model_id == model_id]
+            catalog_entry = self.resolver.catalog.models.get(model_id)
             rows.append(
                 {
                     "model_id": model_id,
@@ -185,6 +186,9 @@ class ObservationService:
                     "tags": list(breakdown.tags),
                     "tag_modifier": breakdown.tag_modifier,
                     "model_modifier": breakdown.model_modifier,
+                    "manual_override_limit": (
+                        catalog_entry.manual_override_limit if catalog_entry else None
+                    ),
                     "pending_observations": [p.to_dict() for p in pending],
                     "observation_accepted": accepted.to_dict() if accepted else None,
                 }
