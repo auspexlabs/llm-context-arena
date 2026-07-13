@@ -32,7 +32,8 @@ _PRIVACY_TOKENS = (
     "data policy",
     "training",
     "store data",
-    "logging",
+    "data logging",
+    "prompt logging",
     "zdr",
     "zero data retention",
 )
@@ -163,25 +164,26 @@ def collect_failure_recommendations(failures: List[Dict[str, Any]]) -> List[str]
         ModelFailureKind.TIMEOUT,
         ModelFailureKind.SERVER_ERROR,
         ModelFailureKind.CLIENT_ERROR,
-        ModelFailureKind.UNKNOWN,
     ]
-    seen_kinds: set[str] = set()
+    priority_set = set(priority)
+    seen_kinds: set[ModelFailureKind] = set()
     ordered_kinds: List[ModelFailureKind] = []
     for failure in failures:
         kind_value = failure.get("failure_kind") or failure_status_class(failure)
-        if kind_value in seen_kinds:
-            continue
-        seen_kinds.add(kind_value)
         try:
-            ordered_kinds.append(ModelFailureKind(kind_value))
+            kind = ModelFailureKind(kind_value)
         except ValueError:
-            ordered_kinds.append(ModelFailureKind.UNKNOWN)
+            kind = ModelFailureKind.UNKNOWN
+        if kind in seen_kinds:
+            continue
+        seen_kinds.add(kind)
+        ordered_kinds.append(kind)
 
     recs: List[str] = []
     for kind in priority:
         if kind in ordered_kinds:
             recs.append(recommendation_for_failure_kind(kind))
     for kind in ordered_kinds:
-        if kind not in priority:
+        if kind not in priority_set:
             recs.append(recommendation_for_failure_kind(kind))
     return recs
