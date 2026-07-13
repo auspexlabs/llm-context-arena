@@ -7,8 +7,33 @@ from typing import Any, Dict, List, Optional
 from .model_failures import collect_failure_recommendations, failure_status_class
 
 
+CHAIRMAN_SYNTHESIS_ERROR = "Error: Unable to generate final synthesis."
+
+
 def _has_content(text: Any) -> bool:
     return bool(str(text or "").strip())
+
+
+def is_usable_final_synthesis(stage3: Optional[Dict[str, Any]]) -> bool:
+    """True when stage-3 is a real chairman answer, not a placeholder or empty."""
+    if not stage3:
+        return False
+    if stage3.get("synthesis_failed"):
+        return False
+    resp = str(stage3.get("response") or "").strip()
+    if not resp:
+        return False
+    if resp == CHAIRMAN_SYNTHESIS_ERROR or resp.startswith(CHAIRMAN_SYNTHESIS_ERROR):
+        return False
+    return True
+
+
+def _chairman_failure_in_metadata(failures: List[Dict[str, Any]]) -> bool:
+    for failure in failures:
+        stage = str(failure.get("stage") or failure.get("role") or "")
+        if stage in {"stage3", "chair_final", "chair"}:
+            return True
+    return False
 
 
 def _draft_steps(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -59,16 +84,24 @@ def assess_execution_quality(
             }
         )
 
-    stage3_resp = (stage3 or {}).get("response", "")
-    if not _has_content(stage3_resp):
+    chairman_failed = not is_usable_final_synthesis(stage3) or _chairman_failure_in_metadata(
+        failures
+    )
+    if chairman_failed:
+        code = "chairman_failed" if _chairman_failure_in_metadata(failures) else "empty_final"
         issues.append(
             {
-                "code": "empty_final",
-                "message": "Chairman produced no usable final answer.",
+                "code": code,
+                "message": (
+                    "Chairman synthesis failed — no usable final verdict."
+                    if code == "chairman_failed"
+                    else "Chairman produced no usable final answer."
+                ),
             }
         )
         recommendations.append(
-            "Retry with a different chairman model, @tokenbudget, or fewer arena models."
+            "Chairman failed — retry with a different chairman model, wait out rate limits, "
+            "or use @tokenbudget / fewer arena models. Do not present partial council output as final."
         )
 
     summarize_targets = meta.get("summarize_targets") or {}
@@ -258,6 +291,7 @@ def assess_execution_quality(
 
     blocking_codes = {
         "empty_final",
+        "chairman_failed",
         "empty_draft_responses",
         "rr_chain_degraded",
         "council_degraded",
@@ -270,7 +304,7 @@ def assess_execution_quality(
     has_blocking = any(i.get("code") in blocking_codes for i in issues)
     has_failures = bool(failures)
 
-    if not _has_content(stage3_resp):
+    if chairman_failed:
         severity = "failed"
         acceptable = False
     elif mode_key == "round_robin" and successful_drafts == 0 and expected_drafts > 0:
@@ -300,7 +334,7 @@ def assess_execution_quality(
             "successful_stage1": successful_stage1,
             "successful_drafts": successful_drafts,
             "expected_drafts": expected_drafts,
-            "has_final_answer": _has_content(stage3_resp),
+            "has_final_answer": is_usable_final_synthesis(stage3),
             "summarize_jobs": len(summarize_jobs),
             "summarize_failures": len(summarize_failures),
         },
@@ -329,6 +363,8 @@ def _format_issue_line(issue: Dict[str, Any]) -> str:
         kind = issue.get("failure_kind") or "unknown"
         msg = (issue.get("message") or "")[:120]
         return f"- model_failure ({kind}): {model} (HTTP {status}) — {msg}"
+    if code in {"empty_final", "chairman_failed"}:
+        return f"- {code}: {issue.get('message') or 'Chairman synthesis failed'}"
     if code == "context_compressed":
         return "- context was chairman-summarized for token budget"
     if code == "chairman_summarizer":

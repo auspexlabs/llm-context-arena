@@ -20,6 +20,7 @@ import type { DeckView } from './types';
 import { startLivePoll } from './live-poll';
 import { formatDuration, timelineStepTimer, totalElapsedMs } from './runtime';
 import { syncRuntimeClock } from './runtime-clock';
+import { isSynthesisFailed } from './synthesis';
 import { isPendingTurnSelected } from './turns';
 import { runTurnStream } from './stream';
 import { resetModelTab } from './viewers/council';
@@ -139,16 +140,18 @@ function renderRail() {
   const assistantTurnsHtml = assistants
     .map((msg, i) => {
       const isLast = i === assistants.length - 1;
-      const status = s.isRunning && isLast ? 'running' : msg.stage3?.response ? 'complete' : 'idle';
+      const status = s.isRunning && isLast ? 'running' : isSynthesisFailed(msg) ? 'failed' : msg.stage3?.response ? 'complete' : 'idle';
       const cost = turnCostFromMessage(msg);
       const query = userQueryBefore(messages, i);
       const queryPreview = query ? query.slice(0, 48) + (query.length > 48 ? '…' : '') : '';
       const meta =
         status === 'running'
           ? `<span style="color:var(--accent)">● running</span>`
-          : status === 'complete'
-            ? `<span class="meta" style="color:var(--ok)">✓ complete</span>`
-            : `<span class="meta">pending</span>`;
+          : status === 'failed'
+            ? `<span class="meta" style="color:var(--warn,#e6a23c)">✗ chairman failed</span>`
+            : status === 'complete'
+              ? `<span class="meta" style="color:var(--ok)">✓ complete</span>`
+              : `<span class="meta">pending</span>`;
       return `
         <button type="button" class="turn-item ${status === 'complete' ? 'complete' : ''} ${i === s.selectedTurnIndex ? 'on' : ''}" data-turn="${i}">
           <div class="title">Turn ${i + 1}${queryPreview ? ` · ${queryPreview.replace(/</g, '')}` : ''}</div>
@@ -239,7 +242,7 @@ function renderDeck() {
     s.pendingTurn
   );
   const running = (s.isRunning && isLast) || pendingSelected;
-  const complete = !!msg?.stage3?.response;
+  const complete = !!msg?.stage3?.response && !isSynthesisFailed(msg);
   const turnCtx = buildTurnContext(s.conversation, msg, s.selectedTurnIndex);
   const statusLabel = running ? 'running' : complete ? 'complete' : 'idle';
   const now = s.runtimeTick || Date.now();

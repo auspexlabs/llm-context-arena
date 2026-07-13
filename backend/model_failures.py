@@ -44,6 +44,11 @@ _TIMEOUT_TOKENS = (
     "deadline exceeded",
 )
 
+_EMPTY_CONTENT_TOKENS = (
+    "empty content",
+    "no response from model",
+)
+
 
 def _message_haystack(message: Any, provider: Any = None) -> str:
     return " ".join(str(part or "") for part in (message, provider)).lower()
@@ -64,6 +69,8 @@ def classify_model_failure(
         return ModelFailureKind.PRIVACY_BLOCKED
     if any(token in haystack for token in _TIMEOUT_TOKENS):
         return ModelFailureKind.TIMEOUT
+    if any(token in haystack for token in _EMPTY_CONTENT_TOKENS):
+        return ModelFailureKind.UNKNOWN
 
     try:
         code = int(status)

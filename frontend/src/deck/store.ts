@@ -1,4 +1,5 @@
 import { normalizeConversation } from './normalize';
+import { executionSeverity, isSynthesisFailed } from './synthesis';
 import type {
   AssistantMessage,
   Conversation,
@@ -88,9 +89,10 @@ export function selectedAssistant(state: DeckState): AssistantMessage | null {
   return list[idx] ?? null;
 }
 
-export function turnStatus(msg: AssistantMessage | null, isRunning: boolean, isLast: boolean): 'running' | 'complete' | 'idle' {
+export function turnStatus(msg: AssistantMessage | null, isRunning: boolean, isLast: boolean): 'running' | 'complete' | 'idle' | 'failed' {
   if (!msg) return 'idle';
   if (isRunning && isLast) return 'running';
+  if (isSynthesisFailed(msg) || executionSeverity(msg) === 'failed') return 'failed';
   if (msg.stage3?.response) return 'complete';
   if (msg.loading?.stage1 || msg.loading?.stage2 || msg.loading?.stage3) return 'running';
   return msg.stage1 ? 'complete' : 'idle';

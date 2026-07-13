@@ -13,6 +13,7 @@ from .budget import maybe_compress_mid_turn
 from .budget_metadata import SummarizeJob
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
 from .cost_tracking import apply_usage_fields, sum_usage_fields, summarize_turn_cost
+from .execution_quality import CHAIRMAN_SYNTHESIS_ERROR
 from .prompts import render_prompt
 
 COUNCIL_MODES = frozenset({"council", "baseline"})
@@ -303,7 +304,9 @@ async def stage3_synthesize_final(
             )
         return {
             "model": chairman_model,
-            "response": "Error: Unable to generate final synthesis.",
+            "response": CHAIRMAN_SYNTHESIS_ERROR,
+            "role": "chair_final",
+            "synthesis_failed": True,
         }
 
     return apply_usage_fields(

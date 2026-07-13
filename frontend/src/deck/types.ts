@@ -5,7 +5,7 @@ export type DeckView = 'context' | CouncilStepId | 'quality';
 
 export type InspectorColumn = 'context' | 'rankings' | 'quality';
 
-export type TurnStatus = 'running' | 'complete' | 'idle';
+export type TurnStatus = 'running' | 'complete' | 'idle' | 'failed';
 
 export interface ConversationSummary {
   id: string;
