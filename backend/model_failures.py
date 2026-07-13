@@ -166,17 +166,18 @@ def collect_failure_recommendations(failures: List[Dict[str, Any]]) -> List[str]
         ModelFailureKind.CLIENT_ERROR,
     ]
     priority_set = set(priority)
-    seen_kinds: set[str] = set()
+    seen_kinds: set[ModelFailureKind] = set()
     ordered_kinds: List[ModelFailureKind] = []
     for failure in failures:
         kind_value = failure.get("failure_kind") or failure_status_class(failure)
-        if kind_value in seen_kinds:
-            continue
-        seen_kinds.add(kind_value)
         try:
-            ordered_kinds.append(ModelFailureKind(kind_value))
+            kind = ModelFailureKind(kind_value)
         except ValueError:
-            ordered_kinds.append(ModelFailureKind.UNKNOWN)
+            kind = ModelFailureKind.UNKNOWN
+        if kind in seen_kinds:
+            continue
+        seen_kinds.add(kind)
+        ordered_kinds.append(kind)
 
     recs: List[str] = []
     for kind in priority:

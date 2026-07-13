@@ -54,3 +54,12 @@ class TestModelFailureClassification:
         assert len(recs) == 2
         assert recommendation_for_failure_kind(ModelFailureKind.CONTEXT_EXCEEDED) in recs[0]
         assert "Rate limited" in recs[1]
+
+    def test_collect_failure_recommendations_dedupes_invalid_kinds_to_unknown(self):
+        failures = [
+            {"failure_kind": "bad_v1"},
+            {"failure_kind": "bad_v2"},
+        ]
+        recs = collect_failure_recommendations(failures)
+        assert len(recs) == 1
+        assert recs[0] == recommendation_for_failure_kind(ModelFailureKind.UNKNOWN)
