@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import threading
+from typing import Any, Dict
 
 import yaml
 
 from .catalog_refresh import get_catalog_meta
+from .frozen_config import clear_frozen_cache
 from .frozen_config.loader import MODEL_CATALOG_PATH
 from .frozen_config.schemas import ModelCatalog, ModelEntry
+
+_CATALOG_WRITE_LOCK = threading.Lock()
 
 
 def _read_catalog_raw() -> Dict[str, Any]:
@@ -55,33 +59,32 @@ def update_catalog_model_fields(
     fields: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Patch editable catalog fields (tags, model_modifier, manual_override_limit)."""
-    raw = _read_catalog_raw()
-    models = raw.setdefault("models", {})
-    if model_id not in models or not isinstance(models[model_id], dict):
-        raise KeyError(model_id)
+    with _CATALOG_WRITE_LOCK:
+        raw = _read_catalog_raw()
+        models = raw.setdefault("models", {})
+        if model_id not in models or not isinstance(models[model_id], dict):
+            raise KeyError(model_id)
 
-    entry = dict(models[model_id])
-    allowed = {"tags", "model_modifier", "manual_override_limit"}
-    for key, value in fields.items():
-        if key not in allowed:
-            continue
-        if key == "tags":
-            entry["tags"] = list(value or [])
-        elif key == "model_modifier":
-            entry["model_modifier"] = float(value)
-        elif key == "manual_override_limit":
-            if value is None:
-                entry.pop("manual_override_limit", None)
-            else:
-                entry["manual_override_limit"] = int(value)
+        entry = dict(models[model_id])
+        allowed = {"tags", "model_modifier", "manual_override_limit"}
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            if key == "tags":
+                entry["tags"] = list(value or [])
+            elif key == "model_modifier":
+                entry["model_modifier"] = float(value)
+            elif key == "manual_override_limit":
+                if value is None:
+                    entry.pop("manual_override_limit", None)
+                else:
+                    entry["manual_override_limit"] = int(value)
 
-    validated = ModelEntry.model_validate(entry)
-    models[model_id] = validated.model_dump(exclude_none=True)
-    raw["models"] = models
-    ModelCatalog.model_validate(raw)
-    _write_catalog_raw(raw)
-
-    from .frozen_config import clear_frozen_cache
+        validated = ModelEntry.model_validate(entry)
+        models[model_id] = validated.model_dump(exclude_none=True)
+        raw["models"] = models
+        ModelCatalog.model_validate(raw)
+        _write_catalog_raw(raw)
 
     clear_frozen_cache()
     return {

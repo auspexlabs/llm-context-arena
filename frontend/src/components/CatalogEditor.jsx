@@ -31,6 +31,7 @@ export default function CatalogEditor({ squad }) {
 
   const loadData = useCallback(async () => {
     try {
+      setValidateResult(null);
       setStatus('Loading catalog…');
       const squadParam = squad || undefined;
       const [limits, pendingData, metaData] = await Promise.all([
@@ -121,12 +122,13 @@ export default function CatalogEditor({ squad }) {
   const handleSaveModel = async (modelId) => {
     try {
       setBusy(true);
+      const parsedModifier = parseFloat(draft.model_modifier);
       const payload = {
         tags: draft.tags
           .split(',')
           .map((t) => t.trim())
           .filter(Boolean),
-        model_modifier: parseFloat(draft.model_modifier) || 1,
+        model_modifier: Number.isFinite(parsedModifier) ? parsedModifier : 1,
       };
       if (draft.manual_override_limit.trim()) {
         payload.manual_override_limit = parseInt(draft.manual_override_limit, 10);
