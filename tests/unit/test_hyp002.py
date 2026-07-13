@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 from backend.rag.eval import build_eval_store, load_golden_queries
 from backend.rag.eval_hyp002 import (
     answer_slot_purity,

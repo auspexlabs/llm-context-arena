@@ -62,3 +62,6 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "eval: RAG recall harness — loads ML models; run locally, skipped in CI",
+]

@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 from backend.rag.eval import HYP001_VARIANTS, build_eval_store, run_hyp001_matrix, run_variant_eval
 from backend.rag.eval import load_golden_queries
 
