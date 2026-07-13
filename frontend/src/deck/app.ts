@@ -1,4 +1,5 @@
 import { api } from './api';
+import { escapeHtml } from './escape';
 import { formatUsd, turnCostFromMessage } from './cost';
 import { userQueryBefore } from './normalize';
 import { buildBreadcrumb } from './breadcrumb';
@@ -154,7 +155,7 @@ function renderRail() {
               : `<span class="meta">pending</span>`;
       return `
         <button type="button" class="turn-item ${status === 'complete' ? 'complete' : ''} ${i === s.selectedTurnIndex ? 'on' : ''}" data-turn="${i}">
-          <div class="title">Turn ${i + 1}${queryPreview ? ` · ${queryPreview.replace(/</g, '')}` : ''}</div>
+          <div class="title">Turn ${i + 1}${queryPreview ? ` · ${escapeHtml(queryPreview)}` : ''}</div>
           <div class="meta">${meta}</div>
           ${status === 'complete' ? `<div class="cost">${formatUsd(cost.cost_usd)} · ${cost.total_tokens.toLocaleString()} tok</div>` : ''}
         </button>`;
@@ -166,13 +167,13 @@ function renderRail() {
     pending && isPendingTurnSelected(pending.turnIndex, assistants.length, pending)
       ? `
         <button type="button" class="turn-item on running" data-turn="${pending.turnIndex}">
-          <div class="title">Turn ${pending.turnIndex + 1} · ${pending.userQuery.slice(0, 40).replace(/</g, '')}${pending.userQuery.length > 40 ? '…' : ''}</div>
+          <div class="title">Turn ${pending.turnIndex + 1} · ${escapeHtml(pending.userQuery.slice(0, 40))}${pending.userQuery.length > 40 ? '…' : ''}</div>
           <div class="meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</div>
         </button>`
       : pending
         ? `
         <button type="button" class="turn-item running" data-turn="${pending.turnIndex}">
-          <div class="title">Turn ${pending.turnIndex + 1} · ${pending.userQuery.slice(0, 40).replace(/</g, '')}${pending.userQuery.length > 40 ? '…' : ''}</div>
+          <div class="title">Turn ${pending.turnIndex + 1} · ${escapeHtml(pending.userQuery.slice(0, 40))}${pending.userQuery.length > 40 ? '…' : ''}</div>
           <div class="meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</div>
         </button>`
         : '';
@@ -182,7 +183,7 @@ function renderRail() {
   const sessionTitle = s.conversation?.title || 'No session';
   const sessionMode = s.conversation?.mode || 'council';
   const pollNote = s.pollError
-    ? `<p class="meta poll-err">Live refresh: ${s.pollError.replace(/</g, '')}</p>`
+    ? `<p class="meta poll-err">Live refresh: ${escapeHtml(s.pollError)}</p>`
     : '<p class="meta poll-ok">Live refresh on</p>';
 
   els.rail.innerHTML = `
@@ -194,7 +195,7 @@ function renderRail() {
     <div class="rail-turns">
       <div class="rail-turns-head">
         <h2>Turns</h2>
-        <span class="meta">${sessionTitle} · ${sessionMode}</span>
+        <span class="meta">${escapeHtml(sessionTitle)} · ${escapeHtml(sessionMode)}</span>
       </div>
       ${turnsHtml || '<p class="meta">No turns yet — take control to start.</p>'}
     </div>
@@ -205,7 +206,7 @@ function renderRail() {
         .map(
           (c) => `
         <button type="button" class="session ${c.id === s.conversationId ? 'on' : ''} ${s.newSessionIds.includes(c.id) ? 'new' : ''}" data-session="${c.id}">
-          <div class="title">${c.title || 'Session'} · ${c.mode || 'council'}${s.newSessionIds.includes(c.id) ? ' <span class="new-badge">new</span>' : ''}</div>
+          <div class="title">${escapeHtml(c.title || 'Session')} · ${escapeHtml(c.mode || 'council')}${s.newSessionIds.includes(c.id) ? ' <span class="new-badge">new</span>' : ''}</div>
           <div class="meta">${c.message_count} messages</div>
         </button>`
         )
@@ -286,7 +287,7 @@ function renderDeck() {
     running && bannerQuery
       ? `<div class="running-banner">
           <span class="running-badge">Turn ${s.selectedTurnIndex + 1} running${totalElapsed ? ` · ${totalElapsed}` : ''}</span>
-          <p class="running-query">${bannerQuery.replace(/</g, '&lt;')}</p>
+          <p class="running-query">${escapeHtml(bannerQuery)}</p>
           ${s.modeProgress.label ? `<p class="meta">${s.modeProgress.label}${s.modeProgress.activeModel ? ` · ${String(s.modeProgress.activeModel).split('/').pop()}` : ''}</p>` : ''}
           ${pendingSelected ? '<p class="meta">External agent run — polling for completion</p>' : ''}
         </div>`
@@ -362,7 +363,7 @@ function renderVerdict() {
   const on = s.deckView === 'verdict' ? ' on' : '';
   els.verdict.className = `verdict-lane clickable${on}`;
   const excerpt = text.length > 400 ? `${text.slice(0, 400)}…` : text;
-  els.verdict.innerHTML = `<button type="button" class="verdict-hit" id="verdict-hit"><span class="label">Verdict</span><div class="body">${excerpt.replace(/</g, '&lt;')}</div><span class="insp-hint">Open full synthesis →</span></button>`;
+  els.verdict.innerHTML = `<button type="button" class="verdict-hit" id="verdict-hit"><span class="label">Verdict</span><div class="body">${escapeHtml(excerpt)}</div><span class="insp-hint">Open full synthesis →</span></button>`;
   els.verdict.querySelector('#verdict-hit')?.addEventListener('click', () => setDeckView('verdict'));
 }
 

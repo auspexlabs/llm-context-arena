@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 import { escapeHtml } from './escape';
@@ -133,7 +134,8 @@ function renderBlock(block: ContentBlock): string {
 
 export function renderMarkdown(text: string): string {
   if (!text) return '';
-  return marked.parse(text) as string;
+  const raw = marked.parse(text) as string;
+  return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
 }
 
 /** Per-block markdown / code / plain prose for RAG chunks and mixed sources. */
