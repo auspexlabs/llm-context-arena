@@ -1,3 +1,4 @@
+import { escapeHtml } from '../escape';
 import { deAnonymizeText, renderMarkdown } from '../markdown';
 import { preventFocusScroll } from '../scroll-anchor';
 import type { AssistantMessage, CouncilStepId } from '../types';
@@ -141,12 +142,12 @@ function renderRankings(container: HTMLElement, msg: AssistantMessage, isRunning
   const raw = deAnonymizeText(cur.ranking || '', labelToModel);
   const parsed =
     cur.parsed_ranking?.length
-      ? `<div class="parsed-ranking"><b>Extracted ranking</b><br>${cur.parsed_ranking.join('<br>')}</div>`
+      ? `<div class="parsed-ranking"><b>Extracted ranking</b><br>${cur.parsed_ranking.map(escapeHtml).join('<br>')}</div>`
       : '';
   const agg =
     aggregate?.length
       ? `<div class="parsed-ranking"><b>Aggregate</b><br>${aggregate
-          .map((a) => `${a.model}: avg ${a.avg_rank ?? a.average_rank ?? '?'}`)
+          .map((a) => `${escapeHtml(String(a.model ?? ''))}: avg ${a.avg_rank ?? a.average_rank ?? '?'}`)
           .join('<br>')}</div>`
       : '';
 
