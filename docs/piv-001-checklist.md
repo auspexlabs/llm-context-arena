@@ -94,12 +94,15 @@ See [`dis-002-mode-turn-routing.md`](dis-002-mode-turn-routing.md). **Remediated
 - [ ] Block concurrent turns while `await_user`
 - [ ] `GET /api/conversations/{id}/events` — SSE subscribe without sending a message
 
-### Frontend (watch-first)
-- [ ] Default read-only; explicit “human override” for send
-- [ ] `await_user` banner + reply box (distinct from new deliberation)
-- [ ] Execution dashboard primary: timeline, progress, stage tabs, context trace
+### Frontend (watch-first) — PIV-002a in progress
+- [x] Greenfield observation deck shell (`frontend/src/deck/`, vanilla TS + Vite)
+- [x] Rail · Deck · Inspector layout (locked spec); council stage viewers ported
+- [x] Take control toggle + stream bridge (decoupled from legacy `ChatInterface`)
+- [ ] Default read-only enforced (composer only when Take control on — partial)
+- [ ] `await_user` banner + reply box (distinct from new deliberation) — PIV-002b
+- [x] Execution dashboard primary: timeline, step viewport, inspector (context/rankings/quality)
 - [ ] Agent attribution on turns (when `X-Agent-Id` present)
-- [ ] Decouple SSE consumer from `handleSendMessage()` in `App.jsx`
+- [ ] Settings/catalog panel port from React `CatalogEditor` — PIV-002a follow-up
 
 ---
 

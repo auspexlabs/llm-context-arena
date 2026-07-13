@@ -1,3 +1,5 @@
+// @ts-nocheck — ported from api.js; typed wrappers in a later pass
+/* API client — PIV-002a */
 /**
  * API client for the LLM Context Arena backend.
  */
