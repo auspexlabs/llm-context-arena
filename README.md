@@ -1,8 +1,10 @@
 # LLM Context Arena
 
-> **Build in public** — development happens on [`auspexlabs/llm-context-arena`](https://github.com/auspexlabs/llm-context-arena). Decisions are logged in [`docs/decision_log.md`](docs/decision_log.md).
+> **Build in public** — development happens in the [`Auspex-Aerie`](https://github.com/Auspex-Aerie) org. Decisions are logged in [`docs/decision_log.md`](docs/decision_log.md).
 
 **Multi-model deliberation with code context — a fork of Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council).**
+
+**License:** Free to download, run, and modify for your own use. You may not ship a competing product or commercial fork — see [LICENSE](LICENSE) (PolyForm Shield 1.0.0). A **Pro** edition with hosted and enterprise features is planned.
 
 All credit to [Karpathy](https://twitter.com/karpathy) for the original idea: put several frontier models in a room, let them answer independently, review each other anonymously, and have a chairman synthesize a final answer. That three-stage council is elegant and we kept it as the default mode.
 
@@ -16,11 +18,12 @@ This fork extends that foundation into an **arena** — same local-first vibe-co
 | **RAG** | CodeRAG pipeline: tree-sitter chunking, learned ColBERT (default), entity/graph hybrid, RRF fusion, Jina rerank, embedding query router |
 | **Context** | Per-model token budgets, chairman summarization when context is huge, manual file picker |
 | **Directives** | Inline `@norag`, `@summarize`, `@tokenbudget`, `@cite`, `@lastchair`, and more |
-| **UI** | Mode timeline, context panel, repo dropzone, stale-index warnings, in-product reindex, streaming progress, light/dark theme |
+| **UI** | **Observatory deck** — watch-first rail/deck/inspector for council runs; take-control stream bridge; context trace, quality panel, live refresh |
+| **Agents** | MCP control plane (`arena-mcp`) — ~30 tools wrapping the HTTP API for Cursor and other MCP clients |
 
 **Roadmap:** Bicameral Mind mode, cost tracking, conditional rerank / index hygiene (see `docs/decision_log.md` DEF-004). Retrieval eval harnesses: `python -m backend.run_hyp001`, `python -m backend.run_hyp002`.
 
-**Repo:** [github.com/auspexlabs/llm-context-arena](https://github.com/auspexlabs/llm-context-arena)
+**Repo:** [github.com/Auspex-Aerie/llm-context-arena](https://github.com/Auspex-Aerie/llm-context-arena)
 
 ---
 
@@ -30,10 +33,25 @@ This fork extends that foundation into an **arena** — same local-first vibe-co
 uv sync
 cd frontend && npm install && cd ..
 cp .env.example .env   # add OPENROUTER_API_KEY
-./start.sh             # backend :8001, frontend :5173
+./start.sh             # backend :8001, observatory deck :5173
 ```
 
+Open **http://localhost:5173** — rail (sessions/turns), deck (timeline + step viewers), inspector (context / rankings / quality), verdict lane. Use **Take control** to run a council turn from the UI.
+
 **RAG defaults (ColBERT + local rerank) need no LM Studio.** LM Studio is only required if you set `SEMANTIC_BACKEND=biencoder` — see [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md). First ColBERT index on GPU is much faster (`COLBERT_DEVICE=auto`); CPU fallback works everywhere.
+
+### Agent control (MCP)
+
+Run the backend, then start the MCP server (stdio — typical for Cursor):
+
+```bash
+python -m backend.main          # or ./start.sh backend only
+uv run arena-mcp                # ARENA_API_URL defaults to http://127.0.0.1:8001
+```
+
+Set `ARENA_AGENT_ID` to attribute turns. Recommended flow: `get_index_manifest` → `create_conversation` → `run_council_turn` or stepwise `create_turn` / `advance_turn`. Always check `execution_quality.acceptable` before trusting stage 3. Full tool map: [`docs/agent-control-plane-architecture.md`](docs/agent-control-plane-architecture.md).
+
+With the observatory deck open, MCP-started runs appear via live poll — no need to drive from the UI.
 
 ---
 
@@ -266,7 +284,8 @@ Output allowance: 4000 tokens (`OUTPUT_TOKEN_ALLOWANCE=4000`)
 ## Tech Stack
 
 - **Backend:** FastAPI, Python 3.10+, async httpx, OpenRouter API
-- **Frontend:** React 19, Vite 7, react-markdown, react-dropzone
+- **Frontend:** Vanilla TypeScript observatory deck, Vite 7, `marked` + DOMPurify, highlight.js
+- **Agents:** FastMCP server in `mcp_arena/` (`arena-mcp` entry point)
 - **RAG:** CodeRAG (tree-sitter chunking, entity/graph hybrid, RRF fusion, embedding query router), ColBERT (default) or FAISS bi-encoder, Jina v3 cross-encoder rerank (`sentence-transformers`); LM Studio only for bi-encoder embeddings; PyTorch cu126 wheel for GPU ColBERT encode
 - **Storage:** JSON files in `data/conversations/`
 
@@ -289,9 +308,23 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 
 - [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md) — RAG setup, env vars, retrieval topology, indexing APIs
 - [docs/decision_log.md](docs/decision_log.md) — append-only architecture / policy ledger (ADRLight-style)
-- [docs/piv-001-agent-control-plane.md](docs/piv-001-agent-control-plane.md) — product pivot: agent control plane, UI as observatory
+- [docs/piv-001-agent-control-plane.md](docs/piv-001-agent-control-plane.md) — agent control plane, UI as observatory
+- [docs/piv-001-checklist.md](docs/piv-001-checklist.md) — implementation status (MCP, turns API, open items)
+- [docs/piv-002-observatory-ui.md](docs/piv-002-observatory-ui.md) — observatory deck spec
 - [PLAN.md](PLAN.md) — Feature roadmap and mode specifications
 - [COUNCIL_OG_README.md](COUNCIL_OG_README.md) — Original Karpathy README
+
+---
+
+## License
+
+Source is available under the [PolyForm Shield License 1.0.0](LICENSE). In short:
+
+- **Use** — download, run, and modify for personal, research, and internal workflows
+- **Share** — redistribute only with the same license and notices
+- **Don't compete** — you may not offer a product that substitutes for LLM Context Arena or the planned Pro edition
+
+Commercial licensing for competing or embedded offerings: contact Auspex Labs.
 
 ---
 
@@ -299,4 +332,4 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 
 **Massive thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for [llm-council](https://github.com/karpathy/llm-council). The original 3-stage council (answer → anonymous peer review → chairman synthesis) is the spine of this project.
 
-Karpathy's vibe code philosophy — minimal, readable, hackable — is alive here. This is still a Saturday hack project. Fork it, break it, make it yours.
+Karpathy's vibe code philosophy — minimal, readable, hackable — is alive here. Contributions and feedback welcome within the license terms above.
