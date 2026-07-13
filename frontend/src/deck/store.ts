@@ -8,6 +8,7 @@ import type {
   DeckView,
   InspectorColumn,
   ModeProgress,
+  TurnRuntime,
 } from './types';
 
 const COUNCIL_STEPS: CouncilStepId[] = ['answers', 'rankings', 'verdict'];
@@ -50,6 +51,8 @@ const initial: DeckState = {
   sessionPinned: false,
   newSessionIds: [],
   pollError: null,
+  turnRuntime: null,
+  runtimeTick: 0,
   theme: 'light',
   settingsOpen: false,
 };
@@ -191,8 +194,13 @@ export function selectConversation(id: string, conversation: Conversation, opts?
       : null,
     sessionPinned: opts?.pinned ?? false,
     newSessionIds: getState().newSessionIds.filter((sid) => sid !== id),
+    turnRuntime: null,
     ...resetTurnUi(),
   });
+}
+
+export function setTurnRuntime(runtime: TurnRuntime | null) {
+  patch({ turnRuntime: runtime });
 }
 
 export function selectTurn(index: number) {

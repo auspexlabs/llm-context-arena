@@ -80,6 +80,18 @@ export interface PendingTurn {
   startedAt?: number;
 }
 
+export interface StepRuntime {
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+export interface TurnRuntime {
+  turnIndex: number;
+  startedAt: number;
+  currentStep: 'stage1' | 'stage2' | 'stage3' | null;
+  steps: Record<'stage1' | 'stage2' | 'stage3', StepRuntime>;
+}
+
 export interface TurnView {
   index: number;
   status: TurnStatus;
@@ -114,6 +126,9 @@ export interface DeckState {
   /** Conversation ids surfaced since last poll (badge in rail). */
   newSessionIds: string[];
   pollError: string | null;
+  turnRuntime: TurnRuntime | null;
+  /** Bumped every second while a turn is running (drives live timers). */
+  runtimeTick: number;
   theme: 'light' | 'dark';
   settingsOpen: boolean;
 }

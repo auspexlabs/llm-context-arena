@@ -1,6 +1,8 @@
 import { api } from './api';
 import type { AssistantMessage, Conversation } from './types';
-import { getState, patch, setDeckView, setModeProgress } from './store';
+import { runtimeOnStageComplete, runtimeOnStageStart } from './runtime';
+import { syncRuntimeClock } from './runtime-clock';
+import { getState, patch, setDeckView, setModeProgress, setTurnRuntime } from './store';
 
 function ensureAssistant(conv: Conversation): AssistantMessage {
   const last = conv.messages[conv.messages.length - 1];
@@ -46,11 +48,15 @@ export async function runTurnStream(
   });
   const turnIdx = conv.messages.filter((m) => m.role === 'assistant').length - 1;
   setDeckView('answers');
+  const startedAt = Date.now();
   patch({
     conversation: conv,
     isRunning: true,
     selectedTurnIndex: turnIdx,
+    turnRuntime: runtimeOnStageStart(null, turnIdx, 'stage1', startedAt),
+    pendingTurn: null,
   });
+  syncRuntimeClock();
 
   await api.sendMessageStream(
     conversationId,
@@ -58,41 +64,59 @@ export async function runTurnStream(
     [],
     (eventType: string, event: { data?: unknown; metadata?: Record<string, unknown> }) => {
       switch (eventType) {
-        case 'stage1_start':
+        case 'stage1_start': {
+          const now = Date.now();
+          setTurnRuntime(runtimeOnStageStart(getState().turnRuntime, turnIdx, 'stage1', now));
           updateConversation((_c, a) => {
             a.loading = { ...a.loading, stage1: true };
           });
           break;
-        case 'stage1_complete':
+        }
+        case 'stage1_complete': {
+          const now = Date.now();
+          setTurnRuntime(runtimeOnStageComplete(getState().turnRuntime, turnIdx, 'stage1', now));
           updateConversation((_c, a) => {
             a.stage1 = event.data as AssistantMessage['stage1'];
             a.metadata = { ...(a.metadata || {}), ...(event.metadata || {}) };
             a.loading = { ...a.loading, stage1: false };
           });
           break;
-        case 'stage2_start':
+        }
+        case 'stage2_start': {
+          const now = Date.now();
+          setTurnRuntime(runtimeOnStageStart(getState().turnRuntime, turnIdx, 'stage2', now));
           updateConversation((_c, a) => {
             a.loading = { ...a.loading, stage2: true };
           });
           break;
-        case 'stage2_complete':
+        }
+        case 'stage2_complete': {
+          const now = Date.now();
+          setTurnRuntime(runtimeOnStageComplete(getState().turnRuntime, turnIdx, 'stage2', now));
           updateConversation((_c, a) => {
             a.stage2 = event.data as AssistantMessage['stage2'];
-            a.metadata = event.metadata || a.metadata;
+            a.metadata = { ...(a.metadata || {}), ...(event.metadata || {}) };
             a.loading = { ...a.loading, stage2: false };
           });
           break;
-        case 'stage3_start':
+        }
+        case 'stage3_start': {
+          const now = Date.now();
+          setTurnRuntime(runtimeOnStageStart(getState().turnRuntime, turnIdx, 'stage3', now));
           updateConversation((_c, a) => {
             a.loading = { ...a.loading, stage3: true };
           });
           break;
-        case 'stage3_complete':
+        }
+        case 'stage3_complete': {
+          const now = Date.now();
+          setTurnRuntime(runtimeOnStageComplete(getState().turnRuntime, turnIdx, 'stage3', now));
           updateConversation((_c, a) => {
             a.stage3 = event.data as AssistantMessage['stage3'];
             a.loading = { ...a.loading, stage3: false };
           });
           break;
+        }
         case 'execution_complete':
           updateConversation((_c, a) => {
             const d = (event.data || {}) as Record<string, unknown>;
@@ -131,4 +155,5 @@ export async function runTurnStream(
   );
 
   patch({ isRunning: false });
+  syncRuntimeClock();
 }

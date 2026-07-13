@@ -1,13 +1,15 @@
 import { escapeHtml } from '../escape';
+import { formatDuration, renderStepTimersHtml, totalElapsedMs } from '../runtime';
 import { agentTurnProgress } from '../turns';
-import type { AgentTurnSnapshot, PendingTurn } from '../types';
-import type { ModeProgress } from '../types';
+import type { AgentTurnSnapshot, ModeProgress, PendingTurn, TurnRuntime } from '../types';
 
 export function renderProgressViewport(
   container: HTMLElement,
   pending: PendingTurn,
   activeTurn: AgentTurnSnapshot | null,
-  modeProgress: ModeProgress
+  modeProgress: ModeProgress,
+  turnRuntime: TurnRuntime | null,
+  now = Date.now()
 ) {
   const prog = activeTurn ? agentTurnProgress(activeTurn) : modeProgress;
   const pct =
@@ -16,13 +18,22 @@ export function renderProgressViewport(
   const query = pending.userQuery.slice(0, 600);
   const sourceLabel =
     pending.source === 'external' ? 'External agent (MCP / API)' : 'Local run';
+  const total =
+    turnRuntime && turnRuntime.turnIndex === pending.turnIndex
+      ? formatDuration(totalElapsedMs(turnRuntime, now))
+      : null;
+  const stepTimers =
+    turnRuntime && turnRuntime.turnIndex === pending.turnIndex
+      ? renderStepTimersHtml(turnRuntime, now)
+      : '';
 
   container.innerHTML = `
     <div class="progress-panel" data-scroll-anchor="progress">
       <div class="progress-head">
         <span class="running-badge">Turn ${pending.turnIndex + 1} in progress</span>
-        <span class="meta">${sourceLabel}</span>
+        <span class="meta">${sourceLabel}${total ? ` · ${total} elapsed` : ''}</span>
       </div>
+      ${stepTimers ? `<div class="runtime-steps">${stepTimers}</div>` : ''}
       <p class="progress-query">${escapeHtml(query)}${pending.userQuery.length > 600 ? '…' : ''}</p>
       <div class="progress-track ${indeterminate ? 'indeterminate' : ''}" aria-hidden="true">
         <div class="progress-fill" style="width:${indeterminate ? '40' : pct}%"></div>

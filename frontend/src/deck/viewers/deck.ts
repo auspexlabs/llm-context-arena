@@ -8,6 +8,7 @@ import type {
   DeckView,
   ModeProgress,
   PendingTurn,
+  TurnRuntime,
 } from '../types';
 import { renderContextViewport } from './context';
 import { renderCouncilViewport } from './council';
@@ -23,11 +24,20 @@ export function renderDeckViewport(
   isRunning: boolean,
   pendingTurn: PendingTurn | null = null,
   activeAgentTurn: AgentTurnSnapshot | null = null,
-  modeProgress: ModeProgress = { current: 0, total: 0, label: '' }
+  modeProgress: ModeProgress = { current: 0, total: 0, label: '' },
+  turnRuntime: TurnRuntime | null = null,
+  now = Date.now()
 ) {
   const assistantCount = conversation?.messages.filter((m) => m.role === 'assistant').length ?? 0;
   if (isPendingTurnSelected(turnIndex, assistantCount, pendingTurn) && pendingTurn) {
-    renderProgressViewport(container, pendingTurn, activeAgentTurn, modeProgress);
+    renderProgressViewport(
+      container,
+      pendingTurn,
+      activeAgentTurn,
+      modeProgress,
+      turnRuntime,
+      now
+    );
     return;
   }
 

@@ -18,6 +18,8 @@ import {
 } from './store';
 import type { DeckView } from './types';
 import { startLivePoll } from './live-poll';
+import { formatDuration, timelineStepTimer, totalElapsedMs } from './runtime';
+import { syncRuntimeClock } from './runtime-clock';
 import { isPendingTurnSelected } from './turns';
 import { runTurnStream } from './stream';
 import { resetModelTab } from './viewers/council';
@@ -70,6 +72,7 @@ async function bootstrap() {
   }
   await refreshConversations();
   startLivePoll();
+  syncRuntimeClock();
 }
 
 async function refreshConversations() {
@@ -112,6 +115,7 @@ function renderViewportOnly() {
     s.pendingTurn
   );
   const running = (s.isRunning && isLast) || pendingSelected;
+  const now = s.runtimeTick || Date.now();
   renderDeckViewport(
     vp,
     s.deckView,
@@ -121,7 +125,9 @@ function renderViewportOnly() {
     running,
     s.pendingTurn,
     s.activeAgentTurn,
-    s.modeProgress
+    s.modeProgress,
+    s.turnRuntime,
+    now
   );
   requestAnimationFrame(() => restoreViewportScroll(vp, scrollTop, anchor, anchorRelTop));
 }
@@ -158,13 +164,13 @@ function renderRail() {
       ? `
         <button type="button" class="turn-item on running" data-turn="${pending.turnIndex}">
           <div class="title">Turn ${pending.turnIndex + 1} · ${pending.userQuery.slice(0, 40).replace(/</g, '')}${pending.userQuery.length > 40 ? '…' : ''}</div>
-          <div class="meta"><span style="color:var(--accent)">● running</span> · external</div>
+          <div class="meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</div>
         </button>`
       : pending
         ? `
         <button type="button" class="turn-item running" data-turn="${pending.turnIndex}">
           <div class="title">Turn ${pending.turnIndex + 1} · ${pending.userQuery.slice(0, 40).replace(/</g, '')}${pending.userQuery.length > 40 ? '…' : ''}</div>
-          <div class="meta"><span style="color:var(--accent)">● running</span> · external</div>
+          <div class="meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</div>
         </button>`
         : '';
 
@@ -236,6 +242,9 @@ function renderDeck() {
   const complete = !!msg?.stage3?.response;
   const turnCtx = buildTurnContext(s.conversation, msg, s.selectedTurnIndex);
   const statusLabel = running ? 'running' : complete ? 'complete' : 'idle';
+  const now = s.runtimeTick || Date.now();
+  const runtimeForTurn =
+    s.turnRuntime?.turnIndex === s.selectedTurnIndex ? s.turnRuntime : null;
 
   const stepsHtml = TIMELINE.map(({ id, label }) => {
     let cls = 'step-btn';
@@ -251,7 +260,11 @@ function renderDeck() {
     } else if (complete && id !== 'context' && id !== 'quality') {
       cls += ' done';
     }
-    return `<button type="button" class="${cls}" data-deck-view="${id}">${label}</button>`;
+    const timer =
+      running && id !== 'context' && id !== 'quality'
+        ? timelineStepTimer(runtimeForTurn, id, now)
+        : '';
+    return `<button type="button" class="${cls}" data-deck-view="${id}">${label}${timer}</button>`;
   }).join('');
 
   const turnStrip = assistants
@@ -264,10 +277,12 @@ function renderDeck() {
   const bc = buildBreadcrumb(turnCtx, s.selectedTurnIndex, statusLabel);
   const userQuery = userQueryBefore(s.conversation?.messages || [], s.selectedTurnIndex);
   const bannerQuery = userQuery || s.pendingTurn?.userQuery || '';
+  const totalElapsed =
+    running && runtimeForTurn ? formatDuration(totalElapsedMs(runtimeForTurn, now)) : '';
   const runningBanner =
     running && bannerQuery
       ? `<div class="running-banner">
-          <span class="running-badge">Turn ${s.selectedTurnIndex + 1} running</span>
+          <span class="running-badge">Turn ${s.selectedTurnIndex + 1} running${totalElapsed ? ` · ${totalElapsed}` : ''}</span>
           <p class="running-query">${bannerQuery.replace(/</g, '&lt;')}</p>
           ${s.modeProgress.label ? `<p class="meta">${s.modeProgress.label}${s.modeProgress.activeModel ? ` · ${String(s.modeProgress.activeModel).split('/').pop()}` : ''}</p>` : ''}
           ${pendingSelected ? '<p class="meta">External agent run — polling for completion</p>' : ''}
@@ -320,7 +335,9 @@ function renderDeck() {
     running,
     s.pendingTurn,
     s.activeAgentTurn,
-    s.modeProgress
+    s.modeProgress,
+    s.turnRuntime,
+    now
   );
 }
 

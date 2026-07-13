@@ -947,3 +947,51 @@ html, body, #app {
 
 .progress-stage { margin: 0; }
 .progress-hint { margin: 0; font-style: italic; }
+
+.runtime-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.runtime-step {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runtime-step.live {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.runtime-step.done {
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.runtime-step.pending {
+  opacity: 0.55;
+}
+
+.runtime-step-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.runtime-step-time {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.step-timer {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  margin-left: 4px;
+}

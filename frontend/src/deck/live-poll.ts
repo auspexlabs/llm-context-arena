@@ -1,5 +1,7 @@
 import { api } from './api';
 import { normalizeConversation } from './normalize';
+import { createTurnRuntime, runtimeFromAgentTurn } from './runtime';
+import { syncRuntimeClock } from './runtime-clock';
 import {
   agentTurnProgress,
   detectPendingTurn,
@@ -37,7 +39,7 @@ async function pollConversation(id: string) {
   const turns = (turnPayload.turns || []) as AgentTurnSnapshot[];
   const activeTurn = findActiveAgentTurn(turns);
   const pending = detectPendingTurn(normalized);
-  const { isRunning, selectedTurnIndex } = getState();
+  const { isRunning, selectedTurnIndex, turnRuntime } = getState();
 
   const externalRunning = !!pending && !isRunning;
   if (externalRunning) {
@@ -57,13 +59,28 @@ async function pollConversation(id: string) {
     turnIdx = Math.min(selectedTurnIndex, assistants - 1);
   }
 
+  let runtime = turnRuntime;
+  if (pending && !isRunning) {
+    const pIdx = pending.turnIndex;
+    if (!runtime || runtime.turnIndex !== pIdx) {
+      runtime = createTurnRuntime(pIdx);
+    }
+    runtime = runtimeFromAgentTurn(runtime, pIdx, activeTurn) ?? runtime;
+  } else if (!pending && !isRunning) {
+    runtime = null;
+  }
+
   patch({
     conversation: normalized,
     selectedTurnIndex: turnIdx,
     activeAgentTurn: activeTurn,
-    pendingTurn: pending,
+    pendingTurn: pending
+      ? { ...pending, startedAt: pending.startedAt ?? runtime?.startedAt }
+      : null,
+    turnRuntime: runtime,
     pollError: null,
   });
+  syncRuntimeClock();
 
   return { pending, activeTurn, assistants };
 }
