@@ -12,7 +12,14 @@ from .entity_index import EntityIndex
 from .format import build_context_block
 from .graph import CodeGraph
 from .fusion import reciprocal_rank_fusion
-from .hybrid import apply_readme_demotion, is_trace_query, seed_chunks_from_query
+from .hybrid import (
+    apply_readme_demotion,
+    extract_path_mentions,
+    is_trace_query,
+    seed_chunks_from_identifiers,
+    seed_chunks_from_paths,
+    seed_chunks_from_query,
+)
 from .query_router import QueryRoute, RouteFn, route_query
 from .rerank import CrossEncoderReranker
 from .store import ConversationStore
@@ -129,7 +136,15 @@ class CodeRetriever:
     def _resolve_route(self, query: str) -> QueryRoute:
         if self.config.use_query_router:
             fn = self._route_fn or route_query
-            return fn(query)
+            route = fn(query)
+            if len(extract_path_mentions(query)) >= 2 and not route.use_graph_append:
+                return QueryRoute(
+                    category="cross_file",
+                    use_graph_append=True,
+                    graph_trace=False,
+                    graph_seed_k=3,
+                )
+            return route
         trace = self.config.graph_trace and is_trace_query(query)
         return QueryRoute(
             category="trace" if trace else "semantic",
@@ -190,16 +205,32 @@ class CodeRetriever:
         entity_index: EntityIndex = self.store.entity_index or EntityIndex()
         return seed_chunks_from_query(query, entity_index, self.store.chunks, limit=8)
 
+    def _path_seed_list(self, query: str) -> List[Tuple[CodeChunk, float]]:
+        return seed_chunks_from_paths(query, self.store.chunks, limit=8)
+
+    def _identifier_seed_list(self, query: str) -> List[Tuple[CodeChunk, float]]:
+        return seed_chunks_from_identifiers(query, self.store.chunks, limit=8)
+
     def _fuse_lists(
         self,
         semantic: List[Tuple[CodeChunk, float]],
         entity: List[Tuple[CodeChunk, float]],
+        paths: List[Tuple[CodeChunk, float]],
+        identifiers: List[Tuple[CodeChunk, float]],
     ) -> List[Tuple[CodeChunk, float]]:
+        candidate_limit = min(
+            self.retrieve_candidates + len(entity) + len(paths) + len(identifiers),
+            64,
+        )
         if self.config.fusion_mode == "rrf":
             lists = [semantic]
             if entity:
                 lists.append(entity)
-            return reciprocal_rank_fusion(lists, limit=self.retrieve_candidates)
+            if paths:
+                lists.append(paths)
+            if identifiers:
+                lists.append(identifiers)
+            return reciprocal_rank_fusion(lists, limit=candidate_limit)
 
         merged: dict[str, Tuple[CodeChunk, float]] = {}
         for chunk, score in semantic:
@@ -210,9 +241,17 @@ class CodeRetriever:
             prev = merged.get(chunk.chunk_id)
             if prev is None or score > prev[1]:
                 merged[chunk.chunk_id] = (chunk, score)
+        for chunk, score in paths:
+            prev = merged.get(chunk.chunk_id)
+            if prev is None or score > prev[1]:
+                merged[chunk.chunk_id] = (chunk, score)
+        for chunk, score in identifiers:
+            prev = merged.get(chunk.chunk_id)
+            if prev is None or score > prev[1]:
+                merged[chunk.chunk_id] = (chunk, score)
         pool = list(merged.values())
         pool.sort(key=lambda x: x[1], reverse=True)
-        return pool[: self.retrieve_candidates]
+        return pool[:candidate_limit]
 
     def _build_candidate_pool(self, query: str) -> List[Tuple[CodeChunk, float]]:
         """Semantic + entity lists fused (RRF or max-score), capped at retrieve_candidates."""
@@ -220,7 +259,65 @@ class CodeRetriever:
         entity: List[Tuple[CodeChunk, float]] = []
         if self.config.use_entity_seed:
             entity = self._entity_seed_list(query)
-        return self._fuse_lists(semantic, entity)
+        paths = self._path_seed_list(query)
+        identifiers = self._identifier_seed_list(query)
+        return self._fuse_lists(semantic, entity, paths, identifiers)
+
+    def _protect_explicit_paths(
+        self,
+        query: str,
+        ranked: List[Tuple[CodeChunk, float]],
+    ) -> List[Tuple[CodeChunk, float]]:
+        """Keep one selected chunk per explicit file path ahead of inferred results."""
+        required = self._path_seed_list(query)
+        required_ids = {chunk.chunk_id for chunk, _ in required}
+        return required + [item for item in ranked if item[0].chunk_id not in required_ids]
+
+    @staticmethod
+    def _dedupe_parent_content(
+        ranked: List[Tuple[CodeChunk, float]],
+    ) -> List[Tuple[CodeChunk, float]]:
+        """Prevent child hits from injecting the same parent body multiple times."""
+        seen: set[Tuple[str, str]] = set()
+        deduped: List[Tuple[CodeChunk, float]] = []
+        for chunk, score in ranked:
+            key = (chunk.source, chunk.parent_id or chunk.chunk_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append((chunk, score))
+        return deduped
+
+    @staticmethod
+    def _select_source_diverse(
+        ranked: List[Tuple[CodeChunk, float]],
+        top_k: int,
+        protected_ids: Optional[set[str]] = None,
+    ) -> List[Tuple[CodeChunk, float]]:
+        """Cap prose/test artifacts for code-focused queries, then backfill if needed."""
+        protected_ids = protected_ids or set()
+        auxiliary_cap = max(2, top_k // 4)
+        selected: List[Tuple[CodeChunk, float]] = []
+        deferred: List[Tuple[CodeChunk, float]] = []
+        auxiliary_count = 0
+        for item in ranked:
+            source = item[0].source.lower()
+            auxiliary = source.startswith(("docs/", "tests/")) or source.endswith(
+                (".md", ".rst", ".json")
+            )
+            protected = item[0].chunk_id in protected_ids
+            if auxiliary and auxiliary_count >= auxiliary_cap and not protected:
+                deferred.append(item)
+                continue
+            selected.append(item)
+            auxiliary_count += int(auxiliary)
+            if len(selected) >= top_k:
+                return selected
+        for item in deferred:
+            selected.append(item)
+            if len(selected) >= top_k:
+                break
+        return selected
 
     def retrieve_pre_rerank(self, query: str, top_k: Optional[int] = None) -> List[Tuple[CodeChunk, float]]:
         """Top-K after semantic + entity merge, before rerank/graph."""
@@ -237,13 +334,24 @@ class CodeRetriever:
             ranked = self.reranker.rerank(
                 query,
                 pool,
-                top_k=k,
+                top_k=len(pool),
                 blend_prior=self.config.rerank_blend_prior,
             )
         else:
-            ranked = pool[:k]
+            ranked = pool
         if self.config.use_readme_demotion:
             ranked = apply_readme_demotion(ranked)
+        ranked = self._protect_explicit_paths(query, ranked)
+        ranked = self._dedupe_parent_content(ranked)
+        if extract_path_mentions(query):
+            protected_ids = {
+                chunk.chunk_id for chunk, _ in self._path_seed_list(query)
+            }
+            ranked = self._select_source_diverse(
+                ranked,
+                k,
+                protected_ids=protected_ids,
+            )
         return ranked[:k]
 
     def retrieve_ranked(self, query: str) -> List[Tuple[CodeChunk, float]]:
@@ -256,6 +364,7 @@ class CodeRetriever:
 
         ranked = self.retrieve_post_rerank_pre_graph(query, top_k=self.rerank_top_k)
         ranked = self._expand_graph(ranked, query, route)
+        ranked = self._dedupe_parent_content(ranked)
         return apply_ast_aware_cap(ranked, self.context_chunk_cap)
 
     def retrieve(self, query: str) -> Tuple[str, List[dict], float]:

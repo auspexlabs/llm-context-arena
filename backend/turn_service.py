@@ -13,13 +13,14 @@ from .arena import (
     stage3_synthesize_final,
 )
 from .config import ARENA_MODELS, CHAIRMAN_MODEL
+from .cost_tracking import sum_usage_fields, summarize_turn_cost
 from .openrouter import query_model
-from .cost_tracking import summarize_turn_cost
 from .dependencies import get_context_engine
+from .execution_quality import assess_from_response_dict
 from .models import TurnCheckpoint, TurnRecord, TurnStatus
 from .run_turn import _assistant_metadata
 from .storage_service import StorageService
-from .turn_store import TurnStore
+from .turn_store import TurnCreationInProgress, TurnStore
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,27 @@ class TurnService:
         self.turn_store = turn_store or TurnStore()
 
     async def create_turn(
+        self,
+        conversation_id: str,
+        content: str,
+        *,
+        settings: Dict[str, Any],
+        manual_context: Optional[List[Dict[str, Any]]] = None,
+        agent_id: Optional[str] = None,
+    ) -> TurnRecord:
+        try:
+            with self.turn_store.creation_guard(conversation_id):
+                return await self._create_turn_locked(
+                    conversation_id,
+                    content,
+                    settings=settings,
+                    manual_context=manual_context,
+                    agent_id=agent_id,
+                )
+        except TurnCreationInProgress as exc:
+            raise ValueError(str(exc)) from exc
+
+    async def _create_turn_locked(
         self,
         conversation_id: str,
         content: str,
@@ -146,6 +168,7 @@ class TurnService:
 
     async def _run_stage1(self, turn: TurnRecord) -> TurnRecord:
         ckpt = turn.checkpoint
+        model_failures = list(turn.metadata.get("model_failures") or [])
         stage1_results = await stage1_collect_responses(
             ckpt.augmented_content,
             ckpt.per_model_prompts or None,
@@ -153,7 +176,9 @@ class TurnService:
             context_tokens_map=ckpt.context_token_map,
             progress_cb=None,
             emit_steps=False,
+            model_failures=model_failures,
         )
+        turn.metadata["model_failures"] = model_failures
         if not stage1_results:
             turn.status = TurnStatus.FAILED
             turn.error = "All models failed in stage 1"
@@ -167,6 +192,7 @@ class TurnService:
 
     async def _run_stage2(self, turn: TurnRecord) -> TurnRecord:
         ckpt = turn.checkpoint
+        model_failures = list(turn.metadata.get("model_failures") or [])
         stage2_results, label_to_model, mid_turn_jobs = await stage2_collect_rankings(
             turn.user_query,
             turn.stage1,
@@ -174,7 +200,9 @@ class TurnService:
             query_model_fn=query_model,
             chairman_model=ckpt.chairman_model,
             budget_override=(ckpt.directives or {}).get("budget_override"),
+            model_failures=model_failures,
         )
+        turn.metadata["model_failures"] = model_failures
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
         turn.stage2 = stage2_results
@@ -190,12 +218,15 @@ class TurnService:
 
     async def _run_stage3(self, turn: TurnRecord) -> TurnRecord:
         ckpt = turn.checkpoint
+        model_failures = list(turn.metadata.get("model_failures") or [])
         stage3_result = await stage3_synthesize_final(
             turn.user_query,
             turn.stage1,
             turn.stage2,
             chairman_model=ckpt.chairman_model,
+            model_failures=model_failures,
         )
+        turn.metadata["model_failures"] = model_failures
 
         rankings_step = {
             "model": "arena",
@@ -204,6 +235,10 @@ class TurnService:
                 for r in turn.stage2
             ),
             "role": "rankings",
+            "prompt_preview": "Peer rankings aggregation",
+            "context_tokens": 0,
+            "est_tokens": 0,
+            **sum_usage_fields(turn.stage2),
         }
         chair_step = dict(stage3_result, role="chair_final")
         steps = list(turn.stage1) + [rankings_step, chair_step]
@@ -221,6 +256,14 @@ class TurnService:
                 "directives": ckpt.directives,
                 "warnings": ckpt.warnings,
                 "context_from_last_chair": ckpt.context_from_last_chair,
+            }
+        )
+        turn.metadata["execution_quality"] = assess_from_response_dict(
+            {
+                "stage1": turn.stage1,
+                "stage2": turn.stage2,
+                "stage3": turn.stage3,
+                "metadata": turn.metadata,
             }
         )
 

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from .config import DATA_DIR
 from .models import TurnRecord, TurnStatus
+
+
+class TurnCreationInProgress(RuntimeError):
+    """Raised when another request is already preparing a turn for a conversation."""
 
 
 class TurnStore:
@@ -24,6 +30,28 @@ class TurnStore:
 
     def _turn_path(self, conversation_id: str, turn_id: str) -> Path:
         return self._conversation_dir(conversation_id) / f"{turn_id}.json"
+
+    @contextmanager
+    def creation_guard(self, conversation_id: str) -> Iterator[None]:
+        """Hold a cross-request lock while a turn is prepared and persisted."""
+        lock_path = self._conversation_dir(conversation_id) / ".create.lock"
+        handle = lock_path.open("a+", encoding="utf-8")
+        acquired = False
+        try:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError as exc:
+                raise TurnCreationInProgress(
+                    f"Conversation {conversation_id} already has a turn being created"
+                ) from exc
+            yield
+        finally:
+            try:
+                if acquired:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
 
     def save(self, turn: TurnRecord) -> TurnRecord:
         turn.updated_at = datetime.utcnow()

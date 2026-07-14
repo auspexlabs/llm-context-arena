@@ -46,6 +46,7 @@ export function renderQualityViewport(
   const privacyShare = privacyFailureShare(failures);
   const kinds = failuresByKind(failures);
   const suggestions = rerunSuggestions(failures);
+  const inferredPartial = !eq && arena.length > 0 && responded < arena.length;
 
   const eqHtml = eq
     ? `<p><strong>Severity:</strong> ${escapeHtml(String(eq.severity || 'ok'))}</p>
@@ -53,6 +54,8 @@ export function renderQualityViewport(
        ${eq.summary ? `<p>${escapeHtml(String(eq.summary))}</p>` : ''}`
     : failures.length
       ? '<p class="review-hint">Execution quality not stored — inferring from model failures.</p>'
+      : inferredPartial
+        ? '<div class="quality-banner tone-warn"><strong>Execution quality metadata is missing.</strong> This turn is inferred degraded because fewer models responded than the recorded squad size.</div>'
       : '<p class="review-hint">No execution_quality recorded.</p>';
 
   const squadHtml =

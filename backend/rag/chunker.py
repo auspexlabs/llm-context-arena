@@ -56,6 +56,7 @@ def _line_window_chunks(
         end = min(len(lines), start + LINE_WINDOW)
         body = "\n".join(lines[start:end]).strip()
         if body:
+            index_text = f"Path: {rel_path}\n{body[:2000]}"
             chunks.append(
                 CodeChunk(
                     chunk_id=_new_chunk_id(),
@@ -65,7 +66,7 @@ def _line_window_chunks(
                     line_end=end,
                     chunk_type=chunk_type,
                     language=language,
-                    index_text=body[:2000],
+                    index_text=index_text[:4000],
                 )
             )
         if end >= len(lines):
@@ -90,9 +91,9 @@ def _chunk_from_node(
     content = _node_text(source, node)
     line_start = node.start_point[0] + 1
     line_end = node.end_point[0] + 1
-    index_text = content
+    index_text = f"Path: {rel_path}\n{content}"
     if symbol:
-        index_text = f"{symbol}\n{content[:1500]}"
+        index_text = f"Path: {rel_path}\nSymbol: {symbol}\n{content[:1500]}"
 
     return CodeChunk(
         chunk_id=_new_chunk_id(),

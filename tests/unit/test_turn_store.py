@@ -1,7 +1,9 @@
 """Tests for turn sidecar persistence."""
 
+import pytest
+
 from backend.models import TurnCheckpoint, TurnRecord, TurnStatus
-from backend.turn_store import TurnStore
+from backend.turn_store import TurnCreationInProgress, TurnStore
 
 
 def _sample_turn(conversation_id: str = "conv-1", turn_id: str = "turn-1") -> TurnRecord:
@@ -46,3 +48,10 @@ class TestTurnStore:
         store.save(_sample_turn(turn_id="b"))
         turns = store.list_for_conversation("conv-1")
         assert {t.turn_id for t in turns} == {"a", "b"}
+
+    def test_creation_guard_rejects_concurrent_creator(self, tmp_path):
+        store = TurnStore(base_dir=str(tmp_path))
+        with store.creation_guard("conv-1"):
+            with pytest.raises(TurnCreationInProgress):
+                with store.creation_guard("conv-1"):
+                    pass

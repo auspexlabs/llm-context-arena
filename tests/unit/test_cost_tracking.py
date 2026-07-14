@@ -39,6 +39,16 @@ class TestCostTracking:
         assert summary["prompt_tokens"] == 300
         assert summary["calls"] == 2
 
+    def test_summarize_turn_cost_preserves_aggregated_calls(self):
+        steps = [
+            {"prompt_tokens": 100, "completion_tokens": 20},
+            {"prompt_tokens": 300, "completion_tokens": 60, "calls": 3},
+        ]
+        summary = summarize_turn_cost(steps)
+        assert summary["prompt_tokens"] == 400
+        assert summary["completion_tokens"] == 80
+        assert summary["calls"] == 4
+
     def test_summarize_conversation_cost(self):
         messages = [
             {"role": "user", "content": "hi"},

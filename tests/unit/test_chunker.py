@@ -36,6 +36,11 @@ class TestChunkFile:
             assert chunk.line_end >= chunk.line_start
             assert chunk.citation_header().startswith("sample_module.py:")
 
+    def test_index_text_includes_repository_path(self):
+        chunks = chunk_file(FIXTURES / "sample_module.py", FIXTURES)
+        assert chunks
+        assert all("Path: sample_module.py" in (chunk.index_text or "") for chunk in chunks)
+
     def test_repository_chunking(self):
         chunks = chunk_repository(FIXTURES)
         assert len(chunks) >= 3

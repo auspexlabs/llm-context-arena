@@ -60,6 +60,8 @@ export function renderInspector(
        ${kindSummary ? `<p class="meta">${kindSummary}</p>` : ''}`
     : failures.length
       ? `<p class="insp-kicker tone-bad">${failures.length} failure(s)</p>${kindSummary ? `<p class="meta">${kindSummary}</p>` : ''}`
+      : ctx.squadSize > 0 && ctx.respondedCount < ctx.squadSize
+        ? `<p class="insp-kicker tone-warn">Quality metadata missing</p><p class="meta">${ctx.respondedCount} / ${ctx.squadSize} responded</p>`
       : '<p class="meta">—</p>';
 
   const col = s.inspectorColumn;

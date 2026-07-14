@@ -15,7 +15,7 @@ function tick() {
     stopRuntimeClock();
     return;
   }
-  patch({ runtimeTick: Date.now() }, 'full');
+  patch({ runtimeTick: Date.now() }, 'background');
 }
 
 export function startRuntimeClock() {

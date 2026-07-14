@@ -51,7 +51,10 @@ def sum_usage_fields(items: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         c = int(item.get("completion_tokens") or 0)
         t = int(item.get("total_tokens") or 0)
         cu = float(item.get("cost_usd") or 0.0)
-        if p or c or t or cu:
+        item_calls = int(item.get("calls") or 0)
+        if item_calls:
+            calls += item_calls
+        elif p or c or t or cu:
             calls += 1
         prompt += p
         completion += c

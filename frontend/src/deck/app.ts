@@ -58,6 +58,7 @@ export function mountApp(root: HTMLElement) {
   };
   subscribe((scope) => {
     if (scope === 'viewport') renderViewportOnly();
+    else if (scope === 'background') renderPreservingScroll();
     else render();
   });
   void bootstrap();
@@ -96,6 +97,26 @@ function render() {
   renderInspectorPanel();
   renderVerdict();
   renderFoot();
+}
+
+function renderPreservingScroll() {
+  const scroll = {
+    viewport: (els.deck.querySelector('#viewport') as HTMLElement | null)?.scrollTop ?? 0,
+    railTurns: (els.rail.querySelector('.rail-turns') as HTMLElement | null)?.scrollTop ?? 0,
+    railSessions: (els.rail.querySelector('.rail-sessions') as HTMLElement | null)?.scrollTop ?? 0,
+    inspector: (els.inspector.querySelector('.insp-body.on') as HTMLElement | null)?.scrollTop ?? 0,
+    verdict: els.verdict.scrollTop,
+  };
+  render();
+  const viewport = els.deck.querySelector('#viewport') as HTMLElement | null;
+  const railTurns = els.rail.querySelector('.rail-turns') as HTMLElement | null;
+  const railSessions = els.rail.querySelector('.rail-sessions') as HTMLElement | null;
+  const inspector = els.inspector.querySelector('.insp-body.on') as HTMLElement | null;
+  if (viewport) viewport.scrollTop = scroll.viewport;
+  if (railTurns) railTurns.scrollTop = scroll.railTurns;
+  if (railSessions) railSessions.scrollTop = scroll.railSessions;
+  if (inspector) inspector.scrollTop = scroll.inspector;
+  els.verdict.scrollTop = scroll.verdict;
 }
 
 function renderViewportOnly() {
@@ -259,7 +280,12 @@ function renderDeck() {
       else if (id === 'rankings' && msg?.loading?.stage2) cls += ' live';
       else if (id === 'rankings' && msg?.stage2?.length) cls += ' done';
       else if (id === 'verdict' && msg?.loading?.stage3) cls += ' live';
-    } else if (id === 'quality' && (msg?.metadata?.model_failures as unknown[] | undefined)?.length) {
+    } else if (
+      id === 'quality' &&
+      (msg?.metadata?.execution_quality ||
+        (msg?.metadata?.model_failures as unknown[] | undefined)?.length ||
+        ((msg?.stage1?.length || 0) < ((msg?.metadata?.arena_models as string[] | undefined)?.length || 0)))
+    ) {
       cls += ' done';
     } else if (complete && id !== 'context' && id !== 'quality') {
       cls += ' done';

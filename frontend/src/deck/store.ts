@@ -13,6 +13,7 @@ import type {
 } from './types';
 
 const COUNCIL_STEPS: CouncilStepId[] = ['answers', 'rankings', 'verdict'];
+export type RenderScope = 'full' | 'viewport' | 'background';
 
 export function defaultDeckView(msg: AssistantMessage | null): DeckView {
   if (!msg) return 'answers';
@@ -59,7 +60,6 @@ const initial: DeckState = {
 };
 
 let state: DeckState = { ...initial };
-export type RenderScope = 'full' | 'viewport';
 
 const listeners = new Set<(scope: RenderScope) => void>();
 
@@ -103,8 +103,8 @@ export function setTheme(theme: 'light' | 'dark') {
   patch({ theme });
 }
 
-export function setModeProgress(progress: Partial<ModeProgress>) {
-  patch({ modeProgress: { ...state.modeProgress, ...progress } });
+export function setModeProgress(progress: Partial<ModeProgress>, scope: RenderScope = 'full') {
+  patch({ modeProgress: { ...state.modeProgress, ...progress } }, scope);
 }
 
 /** Navigate deck + sync inspector highlight. */
@@ -168,8 +168,11 @@ export function toggleFailureExpand(key: string) {
   patch({ failuresExpanded: [...set] }, 'viewport');
 }
 
-export function updateConversations(conversations: ConversationSummary[]) {
-  patch({ conversations });
+export function updateConversations(
+  conversations: ConversationSummary[],
+  scope: RenderScope = 'full'
+) {
+  patch({ conversations }, scope);
 }
 
 export function selectConversation(id: string, conversation: Conversation, opts?: { pinned?: boolean }) {

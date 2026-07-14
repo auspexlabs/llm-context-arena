@@ -47,9 +47,9 @@ async function pollConversation(id: string) {
     const prog = activeTurn
       ? agentTurnProgress(activeTurn)
       : { current: 0, total: 3, label: 'Council deliberation' };
-    setModeProgress({ ...prog, state: 'poll' });
+    setModeProgress({ ...prog, state: 'poll' }, 'background');
   } else if (!isRunning && getState().modeProgress.state === 'poll') {
-    setModeProgress({ current: 0, total: 0, label: '' });
+    setModeProgress({ current: 0, total: 0, label: '' }, 'background');
   }
 
   const assistants = normalized.messages.filter((m) => m.role === 'assistant').length;
@@ -80,7 +80,7 @@ async function pollConversation(id: string) {
       : null,
     turnRuntime: runtime,
     pollError: null,
-  });
+  }, 'background');
   syncRuntimeClock();
 
   return { pending, activeTurn, assistants };
@@ -91,7 +91,7 @@ async function tick() {
   tickInFlight = true;
   try {
     const convs = await api.listConversations();
-    updateConversations(convs);
+    updateConversations(convs, 'background');
 
     let fresh: string[] = [];
     if (!bootstrapped) {
@@ -102,12 +102,12 @@ async function tick() {
     }
     if (fresh.length) {
       const prev = getState().newSessionIds;
-      patch({ newSessionIds: [...new Set([...prev, ...fresh])] });
+      patch({ newSessionIds: [...new Set([...prev, ...fresh])] }, 'background');
       const newest = fresh[0];
       if (!getState().sessionPinned && newest) {
         const conv = await api.getConversation(newest);
         selectConversation(newest, conv);
-        patch({ newSessionIds: [newest] });
+        patch({ newSessionIds: [newest] }, 'background');
       }
     }
 
@@ -117,12 +117,12 @@ async function tick() {
       if (!pending && assistants > 0) {
         const ids = getState().newSessionIds.filter((id) => id !== conversationId);
         if (ids.length !== getState().newSessionIds.length) {
-          patch({ newSessionIds: ids });
+          patch({ newSessionIds: ids }, 'background');
         }
       }
     }
   } catch (e) {
-    patch({ pollError: e instanceof Error ? e.message : 'Poll failed' });
+    patch({ pollError: e instanceof Error ? e.message : 'Poll failed' }, 'background');
   } finally {
     tickInFlight = false;
   }
