@@ -84,3 +84,21 @@ async def test_sessions_route_rejects_cursor_with_invalid_bound_type(tmp_path):
         assert response.status_code == 400
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_sessions_route_rejects_malformed_date_filter(tmp_path):
+    storage = StorageService(data_dir=str(tmp_path / "conversations"))
+
+    async def override_storage():
+        return storage
+
+    app.dependency_overrides[get_storage_service] = override_storage
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/sessions", params={"from": "not-a-date"})
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid from timestamp"
+    finally:
+        app.dependency_overrides.clear()

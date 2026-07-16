@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import fcntl
+import hashlib
 import json
 import os
 import tempfile
@@ -15,6 +15,16 @@ from typing import Any, Callable, Dict, Iterator, List, Optional
 from .config import DATA_DIR
 from .session_catalog import SessionCatalog, SessionCatalogEntry, SessionQuery
 from .session_projection import SessionProjector
+
+try:  # POSIX inter-process locking.
+    import fcntl
+except ImportError:  # pragma: no cover - exercised on Windows.
+    fcntl = None  # type: ignore[assignment]
+
+try:  # Windows inter-process locking.
+    import msvcrt
+except ImportError:  # pragma: no cover - exercised on POSIX.
+    msvcrt = None  # type: ignore[assignment]
 
 
 def utc_now() -> str:
@@ -54,13 +64,39 @@ class StorageService:
     @contextmanager
     def _conversation_lock(self, conversation_id: str) -> Iterator[None]:
         """Serialize read-modify-write cycles across threads and worker processes."""
-        lock_path = self._locks_dir / f"{conversation_id}.lock"
-        with self._thread_lock, lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        # A fixed stripe set bounds lock-file growth while preserving stable
+        # cross-process lock identities. Hash collisions only serialize writes.
+        stripe = hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()[:2]
+        lock_path = self._locks_dir / f"{stripe}.lock"
+        with self._thread_lock, lock_path.open("a+b") as handle:
+            self._lock_handle(handle)
             try:
                 yield
             finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                self._unlock_handle(handle)
+
+    @staticmethod
+    def _lock_handle(handle: Any) -> None:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            return
+        if msvcrt is None:  # pragma: no cover - unsupported Python platform.
+            raise RuntimeError("Curia requires OS-backed file locking")
+        handle.seek(0)
+        if not handle.read(1):
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+
+    @staticmethod
+    def _unlock_handle(handle: Any) -> None:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            return
+        if msvcrt is not None:  # pragma: no branch - Windows counterpart above.
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
     @staticmethod
     def _serialize(conversation: Dict[str, Any]) -> bytes:
@@ -75,11 +111,12 @@ class StorageService:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp_name, path)
-            dir_fd = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
+            if os.name != "nt":
+                dir_fd = os.open(path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
         finally:
             if os.path.exists(temp_name):
                 os.unlink(temp_name)

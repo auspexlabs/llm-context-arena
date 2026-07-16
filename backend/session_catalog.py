@@ -16,6 +16,15 @@ SORT_COLUMNS = {
     "created_desc": "created_at",
     "cost_desc": "total_cost_usd",
 }
+FACET_COLUMNS = {
+    "mode",
+    "last_caller",
+    "origin",
+    "status",
+    "latest_quality",
+    "squad_name",
+}
+LEGACY_SESSION_LIMIT = 500
 
 
 @dataclass(frozen=True)
@@ -453,6 +462,8 @@ class SessionCatalog:
         *,
         omit_empty: bool = False,
     ) -> List[str]:
+        if column not in FACET_COLUMNS:
+            raise ValueError(f"Unsupported session facet: {column}")
         where = f" WHERE {column} <> ''" if omit_empty else ""
         return [
             str(row[0])
@@ -462,15 +473,12 @@ class SessionCatalog:
             if row[0] is not None
         ]
 
-    def all_legacy(self) -> List[Dict[str, Any]]:
-        """Compatibility shape for the existing conversation-list API."""
-        page = self.query(SessionQuery(limit=100, sort="created_desc"))
-        items = list(page["items"])
-        cursor = page["next_cursor"]
-        while cursor:
-            page = self.query(
-                SessionQuery(limit=100, cursor=cursor, sort="created_desc")
-            )
-            items.extend(page["items"])
-            cursor = page["next_cursor"]
-        return items
+    def all_legacy(self, limit: int = LEGACY_SESSION_LIMIT) -> List[Dict[str, Any]]:
+        """Bounded compatibility view for the superseded conversation-list API."""
+        bounded_limit = min(LEGACY_SESSION_LIMIT, max(1, int(limit)))
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM sessions ORDER BY created_at DESC, id DESC LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+        return [self._public_row(row) for row in rows]

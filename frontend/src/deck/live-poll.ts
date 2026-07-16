@@ -91,28 +91,43 @@ async function tick() {
   if (tickInFlight) return;
   tickInFlight = true;
   try {
-    const page = await api.listSessions({ limit: 50, sort: 'updated_desc' });
+    const beforeFetch = getState();
+    const viewingSessions = beforeFetch.workspaceView === 'sessions';
+    const page = await api.listSessions({
+      limit: 50,
+      filters: viewingSessions ? beforeFetch.sessionFilters : {},
+      sort: viewingSessions ? beforeFetch.sessionSort : 'updated_desc',
+    });
     const convs = (page.items || []) as ConversationSummary[];
     const state = getState();
-    const defaultSessionQuery =
-      !Object.values(state.sessionFilters).some(Boolean) && state.sessionSort === 'updated_desc';
-    if (defaultSessionQuery) {
+    const defaultSessionFeed =
+      !viewingSessions ||
+      (!Object.values(beforeFetch.sessionFilters).some(Boolean) &&
+        beforeFetch.sessionSort === 'updated_desc');
+    const sameSessionQuery =
+      viewingSessions &&
+      state.workspaceView === 'sessions' &&
+      state.sessionSort === beforeFetch.sessionSort &&
+      JSON.stringify(state.sessionFilters) === JSON.stringify(beforeFetch.sessionFilters);
+    if (sameSessionQuery) {
       refreshSessionHead(
         page.items || [],
         page.facets || state.sessionFacets,
         page.next_cursor || null,
         Number(page.total || 0),
       );
-    } else {
+    } else if (!viewingSessions) {
       updateConversations(convs, 'background');
     }
 
     let fresh: string[] = [];
-    if (!bootstrapped) {
-      convs.forEach((c: ConversationSummary) => knownIds.add(c.id));
-      bootstrapped = true;
-    } else {
-      fresh = markNewSessions(convs);
+    if (defaultSessionFeed) {
+      if (!bootstrapped) {
+        convs.forEach((c: ConversationSummary) => knownIds.add(c.id));
+        bootstrapped = true;
+      } else {
+        fresh = markNewSessions(convs);
+      }
     }
     if (fresh.length) {
       const prev = getState().newSessionIds;

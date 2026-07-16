@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +13,18 @@ from ..storage_service import StorageService
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
+
+def _normalize_timestamp(value: Optional[str], field: str) -> Optional[str]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {field} timestamp") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @router.get("")
@@ -41,8 +54,8 @@ async def list_sessions(
                 status=status,
                 quality=quality,
                 squad=squad,
-                from_at=from_at,
-                to_at=to_at,
+                from_at=_normalize_timestamp(from_at, "from"),
+                to_at=_normalize_timestamp(to_at, "to"),
                 sort=sort,
             )
         )

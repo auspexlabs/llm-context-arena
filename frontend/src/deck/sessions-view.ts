@@ -123,9 +123,13 @@ function applyLocalFilter(container: HTMLElement): void {
 }
 
 async function copyValue(button: HTMLElement, value: string): Promise<void> {
-  await navigator.clipboard.writeText(value);
   const previous = button.textContent;
-  button.textContent = 'Copied';
+  try {
+    await navigator.clipboard.writeText(value);
+    button.textContent = 'Copied';
+  } catch {
+    button.textContent = 'Copy failed';
+  }
   window.setTimeout(() => {
     button.textContent = previous;
   }, 1200);

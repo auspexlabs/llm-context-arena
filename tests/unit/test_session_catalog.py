@@ -193,3 +193,25 @@ def test_legacy_list_reads_catalog_without_projection_fields_leaking(tmp_path):
     assert summary["message_count"] == 0
     assert "source_checksum" not in summary
     assert "source_revision" not in summary
+
+
+def test_legacy_list_is_bounded_and_facet_columns_are_allowlisted(tmp_path):
+    storage = _storage(tmp_path)
+    storage.create_conversation("one")
+    storage.create_conversation("two")
+
+    assert len(storage.catalog.all_legacy(limit=1)) == 1
+    with storage.catalog._connect() as connection:
+        with pytest.raises(ValueError, match="Unsupported session facet"):
+            storage.catalog._distinct(connection, "mode; DROP TABLE sessions")
+
+
+def test_conversation_locks_use_a_bounded_stripe_set(tmp_path):
+    storage = _storage(tmp_path)
+    for index in range(300):
+        with storage._conversation_lock(f"conversation-{index}"):
+            pass
+
+    lock_files = list(storage._locks_dir.glob("*.lock"))
+    assert len(lock_files) <= 256
+    assert all(len(path.stem) == 2 for path in lock_files)
