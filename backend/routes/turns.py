@@ -36,6 +36,7 @@ async def create_turn(
     turn_service: TurnService = Depends(get_turn_service),
     settings: Dict[str, Any] = Depends(get_settings),
     x_agent_id: Optional[str] = Header(None, alias="X-Agent-Id"),
+    x_curia_origin: Optional[str] = Header(None, alias="X-Curia-Origin"),
 ):
     """
     Agent-initiated turn: prepare context and persist checkpoint.
@@ -49,6 +50,7 @@ async def create_turn(
             settings=settings,
             manual_context=request.manual_context,
             agent_id=x_agent_id,
+            origin=x_curia_origin or ("mcp" if x_agent_id else "api"),
         )
     except ValueError as exc:
         detail = str(exc)

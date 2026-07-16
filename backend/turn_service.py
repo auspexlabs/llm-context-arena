@@ -46,6 +46,7 @@ class TurnService:
         settings: Dict[str, Any],
         manual_context: Optional[List[Dict[str, Any]]] = None,
         agent_id: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> TurnRecord:
         try:
             with self.turn_store.creation_guard(conversation_id):
@@ -55,6 +56,7 @@ class TurnService:
                     settings=settings,
                     manual_context=manual_context,
                     agent_id=agent_id,
+                    origin=origin,
                 )
         except TurnCreationInProgress as exc:
             raise ValueError(str(exc)) from exc
@@ -67,6 +69,7 @@ class TurnService:
         settings: Dict[str, Any],
         manual_context: Optional[List[Dict[str, Any]]] = None,
         agent_id: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> TurnRecord:
         conversation = self.storage.get_conversation(conversation_id)
         if conversation is None:
@@ -98,12 +101,15 @@ class TurnService:
         )
 
         if ctx.directives.reset:
-            from .storage import reset_conversation
-
-            reset_conversation(conversation_id)
+            self.storage.reset_conversation(conversation_id)
             raise ValueError("Reset directive handled; conversation cleared")
 
-        self.storage.add_user_message(conversation_id, ctx.clean_query)
+        self.storage.add_user_message(
+            conversation_id,
+            ctx.clean_query,
+            caller=agent_id,
+            origin=origin or ("mcp" if agent_id else "api"),
+        )
 
         checkpoint = TurnCheckpoint(
             augmented_content=ctx.base_prompt,
@@ -130,8 +136,9 @@ class TurnService:
             user_query=ctx.clean_query,
             user_query_raw=content,
             checkpoint=checkpoint,
+            metadata={"arena_squad": settings.get("arena_squad")},
         )
-        return self.turn_store.save(turn)
+        return self._save_turn(turn)
 
     async def advance_turn(
         self,
@@ -162,9 +169,9 @@ class TurnService:
             logger.exception("Turn advance failed (convo=%s turn=%s)", conversation_id, turn_id)
             turn.status = TurnStatus.FAILED
             turn.error = str(exc)
-            return self.turn_store.save(turn)
+            return self._save_turn(turn)
 
-        return self.turn_store.save(turn)
+        return self._save_turn(turn)
 
     async def _run_stage1(self, turn: TurnRecord) -> TurnRecord:
         ckpt = turn.checkpoint
@@ -303,7 +310,12 @@ class TurnService:
         if turn.status == TurnStatus.COMPLETE:
             raise ValueError("Cannot cancel a completed turn")
         turn.status = TurnStatus.CANCELLED
-        return self.turn_store.save(turn)
+        return self._save_turn(turn)
+
+    def _save_turn(self, turn: TurnRecord) -> TurnRecord:
+        saved = self.turn_store.save(turn)
+        self.storage.refresh_catalog(turn.conversation_id)
+        return saved
 
     def get_turn(self, conversation_id: str, turn_id: str) -> Optional[TurnRecord]:
         return self.turn_store.get(conversation_id, turn_id)

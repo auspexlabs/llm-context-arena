@@ -11,6 +11,7 @@ import type { AgentTurnSnapshot, ConversationSummary } from './types';
 import {
   getState,
   patch,
+  refreshSessionHead,
   selectConversation,
   setModeProgress,
   updateConversations,
@@ -90,15 +91,43 @@ async function tick() {
   if (tickInFlight) return;
   tickInFlight = true;
   try {
-    const convs = await api.listConversations();
-    updateConversations(convs, 'background');
+    const beforeFetch = getState();
+    const viewingSessions = beforeFetch.workspaceView === 'sessions';
+    const page = await api.listSessions({
+      limit: 50,
+      filters: viewingSessions ? beforeFetch.sessionFilters : {},
+      sort: viewingSessions ? beforeFetch.sessionSort : 'updated_desc',
+    });
+    const convs = (page.items || []) as ConversationSummary[];
+    const state = getState();
+    const defaultSessionFeed =
+      !viewingSessions ||
+      (!Object.values(beforeFetch.sessionFilters).some(Boolean) &&
+        beforeFetch.sessionSort === 'updated_desc');
+    const sameSessionQuery =
+      viewingSessions &&
+      state.workspaceView === 'sessions' &&
+      state.sessionSort === beforeFetch.sessionSort &&
+      JSON.stringify(state.sessionFilters) === JSON.stringify(beforeFetch.sessionFilters);
+    if (sameSessionQuery) {
+      refreshSessionHead(
+        page.items || [],
+        page.facets || state.sessionFacets,
+        page.next_cursor || null,
+        Number(page.total || 0),
+      );
+    } else if (!viewingSessions) {
+      updateConversations(convs, 'background');
+    }
 
     let fresh: string[] = [];
-    if (!bootstrapped) {
-      convs.forEach((c: ConversationSummary) => knownIds.add(c.id));
-      bootstrapped = true;
-    } else {
-      fresh = markNewSessions(convs);
+    if (defaultSessionFeed) {
+      if (!bootstrapped) {
+        convs.forEach((c: ConversationSummary) => knownIds.add(c.id));
+        bootstrapped = true;
+      } else {
+        fresh = markNewSessions(convs);
+      }
     }
     if (fresh.length) {
       const prev = getState().newSessionIds;
