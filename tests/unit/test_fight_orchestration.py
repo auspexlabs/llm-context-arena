@@ -56,6 +56,11 @@ async def test_fight_orchestration_tracks_handoffs_without_rag(monkeypatch):
         {"role": "answer", "model": "m1"},
         {"role": "critique", "model": "m2"},
     ]
+    assert [
+        part["target"]
+        for part in defense_parts
+        if part["kind"] == "artifact_ref"
+    ] == ["answer", "critique"]
 
     trace = build_execution_trace(
         mode="fight",

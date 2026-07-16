@@ -661,7 +661,6 @@ async def run_mode_round_robin(
                 passes=passes,
                 turn=turn,
                 model_count=len(models),
-                user_query=user_query,
                 prior_for_prompt=prior_for_prompt,
             )
             full_prompt = f"{base_prompt}\n\n{turn_prompt}"

@@ -178,7 +178,7 @@ _register(
         prompt_id="round_robin.turn",
         version="2",
         mode="round_robin",
-        variables=("iteration", "passes", "turn", "model_count", "user_query", "prior_for_prompt"),
+        variables=("iteration", "passes", "turn", "model_count", "prior_for_prompt"),
         description="Per-turn refinement instruction in round robin.",
         template=(
             "Round Robin pass {iteration}/{passes}, turn {turn}/{model_count}. "

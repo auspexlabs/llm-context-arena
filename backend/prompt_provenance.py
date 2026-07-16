@@ -30,7 +30,7 @@ def artifact_ref(
         "kind": "artifact_ref",
         "label": label,
         "producer": {"role": producer_role, "model": producer_model},
-        "target": "answers",
+        "target": producer_role,
     }
 
 
@@ -39,15 +39,6 @@ def provenance(parts: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         "version": PROMPT_PROVENANCE_VERSION,
         "parts": _coalesce_text(list(parts)),
     }
-
-
-def joined(parts: Iterable[Dict[str, Any]], separator: str = "") -> Dict[str, Any]:
-    combined: List[Dict[str, Any]] = []
-    for part in parts:
-        if combined and separator:
-            combined.append(text_part(separator))
-        combined.append(part)
-    return provenance(combined)
 
 
 def render_projected_prompt(
