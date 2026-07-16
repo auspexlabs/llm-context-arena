@@ -7,6 +7,8 @@ export type InspectorColumn = 'context' | 'rankings' | 'quality';
 
 export type TurnStatus = 'running' | 'complete' | 'idle' | 'failed';
 
+export type WorkspaceView = 'turns' | 'sessions';
+
 export interface ConversationSummary {
   id: string;
   title?: string;
@@ -15,6 +17,57 @@ export interface ConversationSummary {
   created_at?: string;
   total_cost_usd?: number;
   total_tokens?: number;
+}
+
+export interface SessionSummary extends ConversationSummary {
+  updated_at: string;
+  origin: string;
+  originator: string;
+  last_caller: string;
+  turn_count: number;
+  status: string;
+  latest_quality: string;
+  worst_quality: string;
+  total_cost_usd: number;
+  total_tokens: number;
+  total_calls: number;
+  failure_count: number;
+  duration_ms: number;
+  squad_name: string;
+  squad_fingerprint: string;
+  arena_models: string[];
+  chairman_model: string;
+  rag_used: boolean;
+  repository: string;
+}
+
+export interface SessionFacets {
+  modes: string[];
+  callers: string[];
+  origins: string[];
+  statuses: string[];
+  qualities: string[];
+  squads: string[];
+}
+
+export interface SessionFilters {
+  [key: string]: string | undefined;
+  mode?: string;
+  caller?: string;
+  origin?: string;
+  status?: string;
+  quality?: string;
+  squad?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface SessionPage {
+  items: SessionSummary[];
+  next_cursor: string | null;
+  total: number;
+  facets: SessionFacets;
+  sort: 'updated_desc' | 'created_desc' | 'cost_desc';
 }
 
 export interface ModelResponse {
@@ -102,7 +155,16 @@ export interface TurnView {
 }
 
 export interface DeckState {
+  workspaceView: WorkspaceView;
   conversations: ConversationSummary[];
+  sessions: SessionSummary[];
+  sessionFacets: SessionFacets;
+  sessionFilters: SessionFilters;
+  sessionSort: 'updated_desc' | 'created_desc' | 'cost_desc';
+  sessionNextCursor: string | null;
+  sessionTotal: number;
+  sessionsLoading: boolean;
+  sessionsError: string | null;
   conversationId: string | null;
   conversation: Conversation | null;
   selectedTurnIndex: number;

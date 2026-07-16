@@ -11,6 +11,7 @@ import type { AgentTurnSnapshot, ConversationSummary } from './types';
 import {
   getState,
   patch,
+  refreshSessionHead,
   selectConversation,
   setModeProgress,
   updateConversations,
@@ -90,8 +91,21 @@ async function tick() {
   if (tickInFlight) return;
   tickInFlight = true;
   try {
-    const convs = await api.listConversations();
-    updateConversations(convs, 'background');
+    const page = await api.listSessions({ limit: 50, sort: 'updated_desc' });
+    const convs = (page.items || []) as ConversationSummary[];
+    const state = getState();
+    const defaultSessionQuery =
+      !Object.values(state.sessionFilters).some(Boolean) && state.sessionSort === 'updated_desc';
+    if (defaultSessionQuery) {
+      refreshSessionHead(
+        page.items || [],
+        page.facets || state.sessionFacets,
+        page.next_cursor || null,
+        Number(page.total || 0),
+      );
+    } else {
+      updateConversations(convs, 'background');
+    }
 
     let fresh: string[] = [];
     if (!bootstrapped) {

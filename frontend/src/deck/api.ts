@@ -8,6 +8,8 @@
 export const API_BASE =
   import.meta.env.VITE_API_BASE || 'http://localhost:8001';
 
+const OBSERVATORY_HEADERS = { 'X-Curia-Origin': 'observatory' };
+
 export const api = {
   /**
    * List all conversations.
@@ -20,6 +22,26 @@ export const api = {
     return response.json();
   },
 
+  async listSessions({ limit = 50, cursor = null, filters = {}, sort = 'updated_desc' }: {
+    limit?: number;
+    cursor?: string | null;
+    filters?: Record<string, string | undefined>;
+    sort?: string;
+  } = {}) {
+    const url = new URL(`${API_BASE}/api/sessions`);
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('sort', sort);
+    if (cursor) url.searchParams.set('cursor', cursor);
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) url.searchParams.set(key, String(value));
+    });
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error('Failed to list sessions');
+    }
+    return response.json();
+  },
+
   /**
    * Create a new conversation.
    */
@@ -28,6 +50,7 @@ export const api = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...OBSERVATORY_HEADERS,
       },
       body: JSON.stringify({ mode }),
     });
@@ -70,6 +93,7 @@ export const api = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...OBSERVATORY_HEADERS,
         },
         body: JSON.stringify({ content, manual_context: manualContext }),
       }
@@ -94,6 +118,7 @@ export const api = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...OBSERVATORY_HEADERS,
         },
         body: JSON.stringify({ content, manual_context: manualContext }),
         signal,

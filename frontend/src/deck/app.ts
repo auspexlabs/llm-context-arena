@@ -12,10 +12,14 @@ import {
   patch,
   selectConversation,
   selectTurn,
+  receiveSessionPage,
   setDeckView,
+  setSessionQuery,
+  setSessionsError,
+  setSessionsLoading,
   setTheme,
+  setWorkspaceView,
   subscribe,
-  updateConversations,
 } from './store';
 import type { DeckView } from './types';
 import { startLivePoll } from './live-poll';
@@ -26,6 +30,8 @@ import { isPendingTurnSelected } from './turns';
 import { runTurnStream } from './stream';
 import { resetModelTab } from './viewers/council';
 import { renderDeckViewport } from './viewers/deck';
+import { parseDeckLocation, pushDeckLocation, replaceDeckLocation } from './session-url';
+import { renderSessionsPage } from './sessions-view';
 import './deck.css';
 
 const TIMELINE: { id: DeckView; label: string }[] = [
@@ -38,6 +44,9 @@ const TIMELINE: { id: DeckView; label: string }[] = [
 
 let abortCtrl: AbortController | null = null;
 let els: Record<string, HTMLElement> = {};
+let locationReady = false;
+let pushNextLocation = false;
+let locationSuspended = false;
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -61,6 +70,7 @@ export function mountApp(root: HTMLElement) {
     else if (scope === 'background') renderPreservingScroll();
     else render();
   });
+  window.addEventListener('popstate', () => void applyBrowserLocation());
   void bootstrap();
 }
 
@@ -73,35 +83,137 @@ async function bootstrap() {
   } catch {
     setTheme('dark');
   }
-  await refreshConversations();
+  const target = parseDeckLocation(window.location.search);
+  patch({ workspaceView: target.page });
+  await loadSessionPage(false);
+  const firstId = target.conversationId || getState().sessions[0]?.id;
+  if (firstId) {
+    try {
+      await openConversation(firstId, {
+        pinned: Boolean(target.conversationId),
+        turnIndex: target.turnIndex,
+        deckView: target.deckView,
+        preservePage: target.page === 'sessions',
+      });
+    } catch {
+      const fallback = getState().sessions[0]?.id;
+      if (fallback && fallback !== firstId) await openConversation(fallback, { preservePage: target.page === 'sessions' });
+    }
+  }
+  setWorkspaceView(target.page);
+  locationReady = true;
+  render();
   startLivePoll();
   syncRuntimeClock();
 }
 
 async function refreshConversations() {
-  const convs = await api.listConversations();
-  updateConversations(convs);
+  await loadSessionPage(false);
   const { conversationId } = getState();
   if (conversationId) {
     const conv = await api.getConversation(conversationId);
     selectConversation(conversationId, conv, { pinned: getState().sessionPinned });
-  } else if (convs.length) {
-    const conv = await api.getConversation(convs[0].id);
-    selectConversation(convs[0].id, conv);
+  } else if (getState().sessions.length) {
+    const first = getState().sessions[0];
+    const conv = await api.getConversation(first.id);
+    selectConversation(first.id, conv);
+  }
+}
+
+async function loadSessionPage(append: boolean) {
+  const s = getState();
+  if (s.sessionsLoading || (append && !s.sessionNextCursor)) return;
+  setSessionsLoading(true);
+  try {
+    const page = await api.listSessions({
+      limit: 50,
+      cursor: append ? s.sessionNextCursor : null,
+      filters: s.sessionFilters,
+      sort: s.sessionSort,
+    });
+    receiveSessionPage(
+      page.items || [],
+      page.facets || { modes: [], callers: [], origins: [], statuses: [], qualities: [], squads: [] },
+      page.next_cursor || null,
+      Number(page.total || 0),
+      append,
+    );
+  } catch (error) {
+    setSessionsError(error instanceof Error ? error.message : 'Failed to load sessions');
+  }
+}
+
+async function openConversation(
+  id: string,
+  options: {
+    pinned?: boolean;
+    turnIndex?: number | null;
+    deckView?: DeckView | null;
+    preservePage?: boolean;
+    pushHistory?: boolean;
+  } = {},
+) {
+  const conv = await api.getConversation(id);
+  locationSuspended = true;
+  try {
+    selectConversation(id, conv, { pinned: options.pinned ?? true });
+    const assistants = assistantMessages(getState().conversation);
+    if (options.turnIndex != null && assistants.length) {
+      selectTurn(Math.min(options.turnIndex, assistants.length - 1));
+    }
+    if (options.deckView) setDeckView(options.deckView);
+    if (!options.preservePage) setWorkspaceView('turns');
+    resetModelTab();
+  } finally {
+    locationSuspended = false;
+  }
+  if (options.pushHistory) pushNextLocation = true;
+  render();
+}
+
+async function applyBrowserLocation() {
+  const target = parseDeckLocation(window.location.search);
+  if (target.page === 'sessions') {
+    setWorkspaceView('sessions');
+    return;
+  }
+  if (target.conversationId) {
+    await openConversation(target.conversationId, {
+      pinned: true,
+      turnIndex: target.turnIndex,
+      deckView: target.deckView,
+    });
+  } else {
+    setWorkspaceView('turns');
   }
 }
 
 function render() {
+  const sessionsPage = getState().workspaceView === 'sessions';
+  document.querySelector('.observatory')?.classList.toggle('sessions-page', sessionsPage);
   renderRail();
-  renderDeck();
-  renderInspectorPanel();
-  renderVerdict();
-  renderFoot();
+  if (sessionsPage) {
+    renderSessions();
+    els.inspector.innerHTML = '';
+    els.verdict.innerHTML = '';
+    els.foot.innerHTML = '';
+  } else {
+    renderDeck();
+    renderInspectorPanel();
+    renderVerdict();
+    renderFoot();
+  }
+  if (locationReady && !locationSuspended) {
+    if (pushNextLocation) pushDeckLocation(getState());
+    else replaceDeckLocation(getState());
+    pushNextLocation = false;
+  }
 }
 
 function renderPreservingScroll() {
   const scroll = {
     viewport: (els.deck.querySelector('#viewport') as HTMLElement | null)?.scrollTop ?? 0,
+    sessions: (els.deck.querySelector('.sessions-table-scroll') as HTMLElement | null)?.scrollTop ?? 0,
     railTurns: (els.rail.querySelector('.rail-turns') as HTMLElement | null)?.scrollTop ?? 0,
     railSessions: (els.rail.querySelector('.rail-sessions') as HTMLElement | null)?.scrollTop ?? 0,
     inspector: (els.inspector.querySelector('.insp-body.on') as HTMLElement | null)?.scrollTop ?? 0,
@@ -109,10 +221,12 @@ function renderPreservingScroll() {
   };
   render();
   const viewport = els.deck.querySelector('#viewport') as HTMLElement | null;
+  const sessions = els.deck.querySelector('.sessions-table-scroll') as HTMLElement | null;
   const railTurns = els.rail.querySelector('.rail-turns') as HTMLElement | null;
   const railSessions = els.rail.querySelector('.rail-sessions') as HTMLElement | null;
   const inspector = els.inspector.querySelector('.insp-body.on') as HTMLElement | null;
   if (viewport) viewport.scrollTop = scroll.viewport;
+  if (sessions) sessions.scrollTop = scroll.sessions;
   if (railTurns) railTurns.scrollTop = scroll.railTurns;
   if (railSessions) railSessions.scrollTop = scroll.railSessions;
   if (inspector) inspector.scrollTop = scroll.inspector;
@@ -120,6 +234,10 @@ function renderPreservingScroll() {
 }
 
 function renderViewportOnly() {
+  if (getState().workspaceView === 'sessions') {
+    renderSessions();
+    return;
+  }
   const vp = els.deck.querySelector('#viewport') as HTMLElement | null;
   if (!vp) {
     renderDeck();
@@ -176,9 +294,14 @@ function renderRail() {
               : `<span class="meta">pending</span>`;
       return `
         <button type="button" class="turn-item ${status === 'complete' ? 'complete' : ''} ${i === s.selectedTurnIndex ? 'on' : ''}" data-turn="${i}">
-          <div class="title">Turn ${i + 1}${queryPreview ? ` · ${escapeHtml(queryPreview)}` : ''}</div>
-          <div class="meta">${meta}</div>
-          ${status === 'complete' ? `<div class="cost">${formatUsd(cost.cost_usd)} · ${cost.total_tokens.toLocaleString()} tok</div>` : ''}
+          <span class="turn-number">${i + 1}</span>
+          <span class="turn-card-body">
+            <span class="turn-query">${queryPreview ? escapeHtml(queryPreview) : 'Untitled turn'}</span>
+            <span class="turn-card-meta">${meta}${status === 'complete' ? ` · ${formatUsd(cost.cost_usd)} · ${cost.total_tokens.toLocaleString()} tok` : ''}</span>
+            <span class="turn-stage-track" aria-label="Turn stage progress">
+              <i class="done"></i><i class="${msg.stage2?.length ? 'done' : ''}"></i><i class="${msg.stage3?.response ? 'done' : ''}"></i>
+            </span>
+          </span>
         </button>`;
     })
     .join('');
@@ -188,14 +311,12 @@ function renderRail() {
     pending && isPendingTurnSelected(pending.turnIndex, assistants.length, pending)
       ? `
         <button type="button" class="turn-item on running" data-turn="${pending.turnIndex}">
-          <div class="title">Turn ${pending.turnIndex + 1} · ${escapeHtml(pending.userQuery.slice(0, 40))}${pending.userQuery.length > 40 ? '…' : ''}</div>
-          <div class="meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</div>
+          <span class="turn-number">${pending.turnIndex + 1}</span><span class="turn-card-body"><span class="turn-query">${escapeHtml(pending.userQuery.slice(0, 40))}${pending.userQuery.length > 40 ? '…' : ''}</span><span class="turn-card-meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</span><span class="turn-stage-track"><i class="live"></i><i></i><i></i></span></span>
         </button>`
       : pending
         ? `
         <button type="button" class="turn-item running" data-turn="${pending.turnIndex}">
-          <div class="title">Turn ${pending.turnIndex + 1} · ${escapeHtml(pending.userQuery.slice(0, 40))}${pending.userQuery.length > 40 ? '…' : ''}</div>
-          <div class="meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</div>
+          <span class="turn-number">${pending.turnIndex + 1}</span><span class="turn-card-body"><span class="turn-query">${escapeHtml(pending.userQuery.slice(0, 40))}${pending.userQuery.length > 40 ? '…' : ''}</span><span class="turn-card-meta"><span style="color:var(--accent)">● running</span> · external${s.turnRuntime?.turnIndex === pending.turnIndex ? ` · ${formatDuration(totalElapsedMs(s.turnRuntime, s.runtimeTick || Date.now()))}` : ''}</span><span class="turn-stage-track"><i class="live"></i><i></i><i></i></span></span>
         </button>`
         : '';
 
@@ -213,40 +334,32 @@ function renderRail() {
       <button type="button" class="rail-btn" id="btn-settings">⚙</button>
     </div>
     ${pollNote}
-    <div class="rail-turns">
-      <div class="rail-turns-head">
-        <h2>Turns</h2>
-        <span class="meta">${escapeHtml(sessionTitle)} · ${escapeHtml(sessionMode)}</span>
-      </div>
-      ${turnsHtml || '<p class="meta">No turns yet — take control to start.</p>'}
-    </div>
+    <nav class="workspace-tabs" aria-label="Observatory pages">
+      <button type="button" class="workspace-tab ${s.workspaceView === 'turns' ? 'on' : ''}" data-workspace="turns">Turns</button>
+      <button type="button" class="workspace-tab ${s.workspaceView === 'sessions' ? 'on' : ''}" data-workspace="sessions">Sessions <span>${s.sessionTotal || s.conversations.length}</span></button>
+    </nav>
     <button type="button" class="rail-btn" id="btn-new">+ New session</button>
-    <div class="rail-sessions">
-      <h2>Sessions</h2>
-      ${s.conversations
-        .map(
-          (c) => `
-        <button type="button" class="session ${c.id === s.conversationId ? 'on' : ''} ${s.newSessionIds.includes(c.id) ? 'new' : ''}" data-session="${c.id}">
-          <div class="title">${escapeHtml(c.title || 'Session')} · ${escapeHtml(c.mode || 'council')}${s.newSessionIds.includes(c.id) ? ' <span class="new-badge">new</span>' : ''}</div>
-          <div class="meta">${c.message_count} messages</div>
-        </button>`
-        )
-        .join('')}
-    </div>
+    ${s.workspaceView === 'turns' ? `<div class="rail-turns">
+        <div class="rail-turns-head">
+          <h2>Current session</h2>
+          <strong>${escapeHtml(sessionTitle)}</strong>
+          <span class="meta">${escapeHtml(sessionMode)} · <code>${escapeHtml(s.conversationId || '—')}</code></span>
+        </div>
+        ${turnsHtml || '<p class="meta">No turns yet — take control to start.</p>'}
+      </div>` : `<div class="sessions-rail-note"><strong>Session memory</strong><p>Use the full-width catalog to search, filter, compare cost, and reopen work by conversation ID.</p></div>`}
   `;
 
   els.rail.querySelector('#btn-settings')?.addEventListener('click', () => openSettings());
   els.rail.querySelector('#btn-new')?.addEventListener('click', () => void createSession());
-  els.rail.querySelectorAll('[data-session]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const id = (btn as HTMLElement).dataset.session!;
-      const conv = await api.getConversation(id);
-      selectConversation(id, conv, { pinned: true });
-      resetModelTab();
+  els.rail.querySelectorAll('[data-workspace]').forEach((button) => {
+    button.addEventListener('click', () => {
+      pushNextLocation = true;
+      setWorkspaceView((button as HTMLElement).dataset.workspace as 'turns' | 'sessions');
     });
   });
   els.rail.querySelectorAll('[data-turn]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      pushNextLocation = true;
       selectTurn(Number((btn as HTMLElement).dataset.turn));
       resetModelTab();
     });
@@ -331,12 +444,14 @@ function renderDeck() {
 
   els.deck.querySelectorAll('[data-deck-view]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      pushNextLocation = true;
       setDeckView((btn as HTMLElement).dataset.deckView as DeckView);
       resetModelTab();
     });
   });
   els.deck.querySelectorAll('[data-turn-chip]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      pushNextLocation = true;
       selectTurn(Number((btn as HTMLElement).dataset.turnChip));
       resetModelTab();
     });
@@ -369,6 +484,18 @@ function renderDeck() {
     s.turnRuntime,
     now
   );
+}
+
+function renderSessions() {
+  const s = getState();
+  renderSessionsPage(els.deck, s, {
+    openSession: (id) => void openConversation(id, { pinned: true, pushHistory: true }),
+    changeQuery: (filters, sort) => {
+      setSessionQuery(filters, sort);
+      void loadSessionPage(false);
+    },
+    loadMore: () => void loadSessionPage(true),
+  });
 }
 
 function renderInspectorPanel() {
@@ -441,8 +568,7 @@ async function submitQuery() {
 async function createSession() {
   const conv = await api.createConversation('council');
   await refreshConversations();
-  const full = await api.getConversation(conv.id);
-  selectConversation(conv.id, full, { pinned: true });
+  await openConversation(conv.id, { pinned: true, pushHistory: true });
 }
 
 function openSettings() {

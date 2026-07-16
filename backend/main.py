@@ -1,6 +1,6 @@
 """FastAPI backend for Curia."""
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.responses import JSONResponse
@@ -17,8 +17,6 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Tuple
 
-from . import storage
-from .arena import run_full_arena, generate_conversation_title
 from .config import (
     ARENA_MODELS,
     CHAIRMAN_MODEL,
@@ -30,6 +28,7 @@ from .routes.execution import router as execution_router
 from .routes.prompts import router as prompts_router
 from .routes.metrics import router as metrics_router
 from .routes.catalog import router as catalog_router
+from .routes.sessions import router as sessions_router
 from .dependencies import (
     get_context_engine,
     get_settings,
@@ -40,7 +39,6 @@ from .dependencies import (
     save_runtime_settings,
 )
 from .squad_presets import list_squad_summaries
-from .storage import reset_conversation
 from .storage_service import StorageService
 from .rag_lmstudio import (
     index_repo_zip,
@@ -58,6 +56,7 @@ app.include_router(execution_router)
 app.include_router(prompts_router)
 app.include_router(metrics_router)
 app.include_router(catalog_router)
+app.include_router(sessions_router)
 
 # Enable CORS for local development
 app.add_middleware(
@@ -154,10 +153,17 @@ async def list_conversations(
 async def create_conversation(
     request: CreateConversationRequest,
     storage_svc: StorageService = Depends(get_storage_service),
+    x_agent_id: str | None = Header(None, alias="X-Agent-Id"),
+    x_curia_origin: str | None = Header(None, alias="X-Curia-Origin"),
 ):
     """Create a new conversation."""
     conversation_id = str(uuid.uuid4())
-    conversation = storage_svc.create_conversation(conversation_id, request.mode)
+    conversation = storage_svc.create_conversation(
+        conversation_id,
+        request.mode,
+        caller=x_agent_id,
+        origin=x_curia_origin or ("mcp" if x_agent_id else "api"),
+    )
     return conversation
 
 
@@ -179,6 +185,8 @@ async def send_message(
     request: SendMessageRequest,
     storage_svc: StorageService = Depends(get_storage_service),
     settings: Dict[str, Any] = Depends(get_settings),
+    x_agent_id: str | None = Header(None, alias="X-Agent-Id"),
+    x_curia_origin: str | None = Header(None, alias="X-Curia-Origin"),
 ):
     """
     Send a message and run the arena deliberation process.
@@ -196,6 +204,8 @@ async def send_message(
             manual_context=request.manual_context,
             progress_cb=None,
             persist=True,
+            caller=x_agent_id,
+            origin=x_curia_origin or ("mcp" if x_agent_id else "api"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -208,6 +218,8 @@ async def send_message_stream(
     conversation_id: str,
     request: SendMessageRequest,
     storage_svc: StorageService = Depends(get_storage_service),
+    x_agent_id: str | None = Header(None, alias="X-Agent-Id"),
+    x_curia_origin: str | None = Header(None, alias="X-Curia-Origin"),
 ):
     """
     Send a message and stream the arena deliberation process.
@@ -235,7 +247,7 @@ async def send_message_stream(
             )
 
             if ctx.directives.reset:
-                reset_conversation(conversation_id)
+                storage_svc.reset_conversation(conversation_id)
                 yield "data: " + json.dumps({"type": "reset", "message": "Conversation reset as requested."}) + "\n\n"
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
                 return
@@ -252,7 +264,13 @@ async def send_message_stream(
             async def _progress_cb(payload: Dict[str, Any]):
                 await progress_events.put(payload)
 
-            storage_svc.add_user_message(conversation_id, ctx.clean_query)
+            request_origin = x_curia_origin or ("mcp" if x_agent_id else "api")
+            storage_svc.add_user_message(
+                conversation_id,
+                ctx.clean_query,
+                caller=x_agent_id,
+                origin=request_origin,
+            )
 
             runner_task = asyncio.create_task(
                 run_turn(
@@ -266,6 +284,8 @@ async def send_message_stream(
                     persist_assistant=False,
                     prepared_ctx=ctx,
                     schedule_title=is_first_message,
+                    caller=x_agent_id,
+                    origin=request_origin,
                 )
             )
 
@@ -319,6 +339,8 @@ async def send_message_stream(
                     {"model": "system", "response": err_msg},
                     context_sources,
                     metadata={"mode": conversation.get("mode", "council")},
+                    caller=x_agent_id,
+                    origin=request_origin,
                 )
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
                 return
@@ -357,6 +379,8 @@ async def send_message_stream(
                 stage3_result,
                 context_sources,
                 metadata=mode_metadata,
+                caller=x_agent_id,
+                origin=request_origin,
             )
 
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -494,7 +518,11 @@ async def search_repo(conversation_id: str, q: str, limit: int = 3):
 
 
 @app.post("/api/conversations/{conversation_id}/upload_repo")
-async def upload_repo(conversation_id: str, file: UploadFile = File(...)):
+async def upload_repo(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    storage_svc: StorageService = Depends(get_storage_service),
+):
     """
     Upload a repository as a .zip and index it for this conversation.
     Uses local LM Studio embeddings + FAISS (see backend/rag_lmstudio.py).
@@ -510,6 +538,7 @@ async def upload_repo(conversation_id: str, file: UploadFile = File(...)):
     start = time.monotonic()
     try:
         msg = index_repo_zip(tmp_path, conversation_id)
+        storage_svc.set_repository(conversation_id, file.filename or "uploaded repository")
         duration = time.monotonic() - start
         return {"status": "success", "message": f"{msg} (took {duration:.2f}s)"}
     except Exception as e:
@@ -556,7 +585,12 @@ async def reindex_snapshot(conversation_id: str):
 
 
 @app.post("/api/conversations/{conversation_id}/reindex_git")
-async def reindex_git(conversation_id: str, include_untracked: bool | None = None, repo_root: str | None = None):
+async def reindex_git(
+    conversation_id: str,
+    include_untracked: bool | None = None,
+    repo_root: str | None = None,
+    storage_svc: StorageService = Depends(get_storage_service),
+):
     """
     Index the current git working tree for this conversation.
     """
@@ -578,6 +612,7 @@ async def reindex_git(conversation_id: str, include_untracked: bool | None = Non
     try:
         msg = build_worktree_snapshot(conversation_id, repo_root=root, include_untracked=include_untracked)
         result = index_repo_dir(Path("temp_repos") / conversation_id, conversation_id)
+        storage_svc.set_repository(conversation_id, str(root))
         return {
             "status": "success",
             "message": f"{msg} {result}",

@@ -10,6 +10,10 @@ import type {
   InspectorColumn,
   ModeProgress,
   TurnRuntime,
+  SessionFacets,
+  SessionFilters,
+  SessionSummary,
+  WorkspaceView,
 } from './types';
 
 const COUNCIL_STEPS: CouncilStepId[] = ['answers', 'rankings', 'verdict'];
@@ -34,7 +38,23 @@ export function councilStepFromView(view: DeckView): CouncilStepId | null {
 }
 
 const initial: DeckState = {
+  workspaceView: 'turns',
   conversations: [],
+  sessions: [],
+  sessionFacets: {
+    modes: [],
+    callers: [],
+    origins: [],
+    statuses: [],
+    qualities: [],
+    squads: [],
+  },
+  sessionFilters: {},
+  sessionSort: 'updated_desc',
+  sessionNextCursor: null,
+  sessionTotal: 0,
+  sessionsLoading: false,
+  sessionsError: null,
   conversationId: null,
   conversation: null,
   selectedTurnIndex: 0,
@@ -173,6 +193,70 @@ export function updateConversations(
   scope: RenderScope = 'full'
 ) {
   patch({ conversations }, scope);
+}
+
+export function setWorkspaceView(view: WorkspaceView) {
+  patch({ workspaceView: view });
+}
+
+export function setSessionQuery(filters: SessionFilters, sort = state.sessionSort) {
+  patch({
+    sessionFilters: filters,
+    sessionSort: sort,
+    sessions: [],
+    sessionNextCursor: null,
+    sessionTotal: 0,
+    sessionsError: null,
+  });
+}
+
+export function setSessionsLoading(loading: boolean) {
+  patch({ sessionsLoading: loading }, 'background');
+}
+
+export function receiveSessionPage(
+  items: SessionSummary[],
+  facets: SessionFacets,
+  nextCursor: string | null,
+  total: number,
+  append: boolean,
+) {
+  const merged = append
+    ? [...state.sessions, ...items.filter((item) => !state.sessions.some((row) => row.id === item.id))]
+    : items;
+  patch({
+    sessions: merged,
+    sessionFacets: facets,
+    sessionNextCursor: nextCursor,
+    sessionTotal: total,
+    sessionsLoading: false,
+    sessionsError: null,
+    ...(!append ? { conversations: items } : {}),
+  });
+}
+
+export function refreshSessionHead(
+  items: SessionSummary[],
+  facets: SessionFacets,
+  nextCursor: string | null,
+  total: number,
+) {
+  const headIds = new Set(items.map((item) => item.id));
+  const tail = state.sessions.filter((item) => !headIds.has(item.id));
+  const merged = [...items, ...tail].slice(0, Math.max(total, items.length));
+  patch({
+    sessions: merged,
+    conversations: items,
+    sessionFacets: facets,
+    sessionTotal: total,
+    sessionNextCursor:
+      state.sessions.length > items.length ? state.sessionNextCursor : nextCursor,
+    sessionsError: null,
+  }, 'background');
+}
+
+export function setSessionsError(message: string) {
+  patch({ sessionsLoading: false, sessionsError: message });
 }
 
 export function selectConversation(id: string, conversation: Conversation, opts?: { pinned?: boolean }) {

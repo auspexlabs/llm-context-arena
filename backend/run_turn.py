@@ -21,7 +21,6 @@ from .models import (
 )
 from .execution_quality import assess_from_response_dict, format_agent_notice
 from .metrics import record_turn_metrics
-from .storage import reset_conversation
 from .storage_service import StorageService
 
 logger = logging.getLogger(__name__)
@@ -105,6 +104,7 @@ def _assistant_metadata(
         "mode": mode,
         "chairman_model": chairman_model,
         "arena_models": arena_models,
+        "arena_squad": metadata.get("arena_squad"),
         "steps": metadata.get("steps"),
         "cost": metadata.get("cost"),
         "context_from_last_chair": ctx.context_from_last_chair,
@@ -130,6 +130,8 @@ async def run_turn(
     persist_assistant: Optional[bool] = None,
     prepared_ctx: Optional[ContextResult] = None,
     schedule_title: bool = True,
+    caller: Optional[str] = None,
+    origin: Optional[str] = None,
 ) -> TurnRunResult:
     """
     Prepare context, run the arena for a conversation, optionally persist messages.
@@ -161,7 +163,7 @@ async def run_turn(
         )
 
     if ctx.directives.reset:
-        reset_conversation(conversation_id)
+        storage_svc.reset_conversation(conversation_id)
         reset_payload = {
             "stage1": [],
             "stage2": [],
@@ -179,7 +181,12 @@ async def run_turn(
 
     title_task: Optional[asyncio.Task] = None
     if save_user:
-        storage_svc.add_user_message(conversation_id, ctx.clean_query)
+        storage_svc.add_user_message(
+            conversation_id,
+            ctx.clean_query,
+            caller=caller,
+            origin=origin,
+        )
         if is_first_message and schedule_title:
             title_task = asyncio.create_task(generate_conversation_title(ctx.clean_query))
     elif is_first_message and schedule_title:
@@ -200,6 +207,7 @@ async def run_turn(
     metadata["directives"] = ctx.directives.dict()
     metadata["warnings"] = list(ctx.warnings or [])
     metadata["mode"] = mode
+    metadata["arena_squad"] = settings.get("arena_squad")
     metadata["context_from_last_chair"] = ctx.context_from_last_chair
     if ctx.summarize_targets:
         metadata["summarize_targets"] = ctx.summarize_targets
@@ -268,6 +276,8 @@ async def run_turn(
                 arena_models=arena_models,
                 chairman_model=chairman_model,
             ),
+            caller=caller,
+            origin=origin,
         )
 
     return TurnRunResult(
