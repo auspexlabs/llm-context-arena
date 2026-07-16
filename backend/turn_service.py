@@ -17,6 +17,7 @@ from .cost_tracking import sum_usage_fields, summarize_turn_cost
 from .openrouter import query_model
 from .dependencies import get_context_engine
 from .execution_quality import assess_from_response_dict
+from .execution_trace import build_execution_trace
 from .models import TurnCheckpoint, TurnRecord, TurnStatus
 from .run_turn import _assistant_metadata
 from .storage_service import StorageService
@@ -264,6 +265,18 @@ class TurnService:
                 "warnings": ckpt.warnings,
                 "context_from_last_chair": ckpt.context_from_last_chair,
             }
+        )
+        turn.metadata["execution_trace"] = build_execution_trace(
+            mode="council",
+            metadata_steps=steps,
+            stage1=turn.stage1,
+            stage2=turn.stage2,
+            stage3=turn.stage3,
+            failures=turn.metadata.get("model_failures") or [],
+            arena_models=ckpt.arena_models,
+            chairman_model=ckpt.chairman_model,
+            has_context=bool(ckpt.context_block),
+            context_source_count=len(ckpt.context_sources),
         )
         turn.metadata["execution_quality"] = assess_from_response_dict(
             {

@@ -18,6 +18,7 @@ _STEP_KEYS = frozenset(
         "response",
         "prompt_preview",
         "prompt_full",
+        "orchestration_text",
         "est_tokens",
         "context_tokens",
         "duration_ms",
@@ -31,6 +32,46 @@ _STEP_KEYS = frozenset(
 )
 
 
+def _steps_from_trace(msg: Dict[str, Any], meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Resolve canonical trace nodes back to their stored payloads in ordinal order."""
+    trace = meta.get("execution_trace") or {}
+    nodes = trace.get("steps") or []
+    if not trace.get("version") or not isinstance(nodes, list):
+        return []
+
+    collections = {
+        "stage1": msg.get("stage1") or [],
+        "stage2": msg.get("stage2") or [],
+        "metadata.steps": meta.get("steps") or [],
+    }
+    rows: List[Dict[str, Any]] = []
+    for node in sorted(nodes, key=lambda item: int(item.get("ordinal") or 0)):
+        source = node.get("source") or {}
+        collection = source.get("collection")
+        index = int(source.get("index") or 0)
+        if collection == "stage3":
+            stored = msg.get("stage3") or {}
+        else:
+            values = collections.get(collection, [])
+            stored = values[index] if 0 <= index < len(values) else {}
+        row = dict(stored) if isinstance(stored, dict) else {}
+        row.update(
+            {
+                "step_id": node.get("step_id"),
+                "ordinal": node.get("ordinal"),
+                "kind": node.get("kind"),
+                "role": node.get("role") or row.get("role"),
+                "model": node.get("model") or row.get("model"),
+                "status": node.get("status"),
+                "terminal": bool(node.get("terminal")),
+                "predecessor_step_ids": node.get("predecessor_step_ids") or [],
+                "source": source,
+            }
+        )
+        rows.append(row)
+    return rows
+
+
 def _filter_steps(
     steps: List[Dict[str, Any]],
     include: Set[str],
@@ -42,8 +83,20 @@ def _filter_steps(
             "role": step.get("role"),
             "response": step.get("response"),
         }
+        for key in (
+            "step_id",
+            "ordinal",
+            "kind",
+            "status",
+            "terminal",
+            "predecessor_step_ids",
+            "source",
+        ):
+            if key in step:
+                row[key] = step[key]
         if "prompts" in include:
             row["prompt_preview"] = step.get("prompt_preview")
+            row["orchestration_text"] = step.get("orchestration_text")
         if "full_prompts" in include:
             row["prompt_full"] = step.get("prompt_full")
         if "cost" in include:
@@ -113,7 +166,9 @@ async def get_message_execution(
         payload["cost"] = meta.get("cost")
 
     if "steps" in flags or "prompts" in flags or "full_prompts" in flags or "rankings" in flags:
-        steps = meta.get("steps") or []
+        steps = _steps_from_trace(msg, meta)
+        if not steps:
+            steps = meta.get("steps") or []
         if not steps and msg.get("stage1"):
             steps = list(msg.get("stage1") or [])
             if msg.get("stage2"):

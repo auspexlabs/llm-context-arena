@@ -20,6 +20,7 @@ from .models import (
     Stage3Result,
 )
 from .execution_quality import assess_from_response_dict, format_agent_notice
+from .execution_trace import build_execution_trace
 from .metrics import record_turn_metrics
 from .storage_service import StorageService
 
@@ -106,6 +107,7 @@ def _assistant_metadata(
         "arena_models": arena_models,
         "arena_squad": metadata.get("arena_squad"),
         "steps": metadata.get("steps"),
+        "execution_trace": metadata.get("execution_trace"),
         "cost": metadata.get("cost"),
         "context_from_last_chair": ctx.context_from_last_chair,
         "model_failures": metadata.get("model_failures") or [],
@@ -236,6 +238,19 @@ async def run_turn(
     except Exception:
         logger.debug("Observation recording skipped", exc_info=True)
         metadata.setdefault("observation_pending", [])
+
+    metadata["execution_trace"] = build_execution_trace(
+        mode=mode,
+        metadata_steps=metadata.get("steps") or [],
+        stage1=stage1_results,
+        stage2=stage2_results,
+        stage3=stage3_result,
+        failures=metadata.get("model_failures") or [],
+        arena_models=arena_models,
+        chairman_model=chairman_model,
+        has_context=bool(ctx.context_block),
+        context_source_count=len(ctx.context_sources or []),
+    )
 
     execution = build_arena_execution(
         conversation_id=conversation_id,

@@ -124,6 +124,11 @@ class ConversationMetadata(BaseModel):
     title: str
     message_count: int
     mode: str | None = "council"
+    total_cost_usd: float = 0.0
+    total_tokens: int = 0
+    arena_models: List[str] = Field(default_factory=list)
+    chairman_model: str | None = None
+    squad_fingerprint: str = ""
 
 
 class Conversation(BaseModel):

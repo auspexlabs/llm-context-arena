@@ -1,4 +1,5 @@
 import { escapeHtml } from '../escape';
+import { executionTrace } from '../execution-trace';
 import {
   classifyFailureKind,
   failureKey,
@@ -42,7 +43,9 @@ export function renderQualityViewport(
   const failures = (meta.model_failures as ModelFailure[]) || [];
   const obs = (meta.observation_pending as Record<string, unknown>[]) || [];
   const arena = (meta.arena_models as string[]) || [];
-  const responded = (msg.stage1 || []).length;
+  const mode = String(meta.mode || 'council');
+  const trace = executionTrace(msg, mode);
+  const responded = trace?.summary.participant_succeeded ?? (msg.stage1 || []).length;
   const privacyShare = privacyFailureShare(failures);
   const kinds = failuresByKind(failures);
   const suggestions = rerunSuggestions(failures);
@@ -60,8 +63,16 @@ export function renderQualityViewport(
 
   const squadHtml =
     arena.length > 0
-      ? `<p><strong>Squad:</strong> ${responded} / ${arena.length} responded</p>`
+      ? `<p><strong>Squad:</strong> ${responded} / ${arena.length} produced usable output</p>`
       : '';
+
+  const traceHtml = trace
+    ? `<div class="quality-trace-stats">
+        <span><b>${trace.summary.succeeded_steps}</b> succeeded</span>
+        <span><b>${trace.summary.failed_steps}</b> failed</span>
+        ${mode === 'round_robin' ? `<span><b>${trace.summary.successful_refinements}</b> completed refinement calls</span><span><b>${trace.summary.handoff_deliveries}</b> deliveries</span>` : ''}
+      </div>`
+    : '';
 
   const privacyBanner =
     privacyShare >= 0.5 && failures.length > 0
@@ -74,7 +85,7 @@ export function renderQualityViewport(
       : kinds.context_exceeded
         ? `<div class="quality-banner tone-warn">
             <strong>Context exceeded:</strong> at least one model hit its context window.
-            Use @summarize or fewer RAG chunks — not the same fix as data-policy blocks.
+            Reduce retrieved chunks, raise the budget, or use a larger-window model. Retrieved code must not be LLM-summarized.
           </div>`
         : '';
 
@@ -127,7 +138,7 @@ export function renderQualityViewport(
   container.innerHTML = `
     <h3>Execution quality</h3>
     ${privacyBanner}
-    <section class="ctx-panel ctx-panel-quality">${eqHtml}${squadHtml}${kindHtml}${rerunHtml}</section>
+    <section class="ctx-panel ctx-panel-quality">${eqHtml}${squadHtml}${traceHtml}${kindHtml}${rerunHtml}</section>
     <section class="ctx-panel ctx-panel-quality">
       <h3 class="ctx-heading">Model failures</h3>
       <p class="ctx-sub">Expand for verbatim provider response</p>

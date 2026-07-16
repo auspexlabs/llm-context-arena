@@ -1,103 +1,180 @@
+import { renderCostPanel, type CostPanelState, type CostSeriesId } from './cost-panel';
+import { formatUsd, turnCostFromMessage } from './cost';
 import { escapeHtml } from './escape';
-import { failuresByKind, type ModelFailure } from './failures';
-import { squadHealth } from './squad-health';
-import { buildTurnContext } from './turn-context';
-import { getState, openInspectorColumn, setContextPromptModel } from './store';
+import { executionTrace } from './execution-trace';
+import { participantViews, renderAvatar } from './participants';
+import { buildPulse } from './pulse';
+import {
+  assistantMessages,
+  getState,
+  setContextInjectionSelection,
+  setContextPromptModel,
+  setDeckView,
+} from './store';
 import type { AssistantMessage } from './types';
 
-function headCell(id: 'context' | 'rankings' | 'quality', label: string, active: boolean) {
-  return `<button type="button" class="insp-head${active ? ' on' : ''}" data-insp-col="${id}">${label}</button>`;
+let participantsOpen = false;
+let costState: CostPanelState = {
+  selected: ['current', 'squad', 'memory'],
+  breakdown: false,
+  topN: 5,
+};
+
+function participantDialog(
+  participants: ReturnType<typeof participantViews>,
+  msg: AssistantMessage | undefined
+) {
+  if (!participantsOpen) return '';
+  const arena = (msg?.metadata?.arena_models as string[] | undefined) || [];
+  return `<div class="participant-backdrop" data-participant-close>
+    <section class="participant-dialog" role="dialog" aria-modal="true" aria-label="Turn participants">
+      <div class="participant-dialog-head">
+        <div><p class="rail-eyebrow">Turn roster</p><h2>Participants</h2></div>
+        <button type="button" class="participant-close" data-participant-close aria-label="Close participants">×</button>
+      </div>
+      <div class="participant-card-list">
+        ${participants.map((participant) => {
+          const arenaIndex = arena.indexOf(participant.model);
+          return `<article class="participant-card tone-${participant.status}">
+            ${renderAvatar(participant)}
+            <div class="participant-card-main">
+              <div class="participant-name"><b>${escapeHtml(participant.short)}</b>${participant.isChair ? '<span class="participant-role">Chair</span>' : ''}</div>
+              <p class="participant-provider">${escapeHtml(participant.provider)} · ${escapeHtml(participant.statusLabel)}</p>
+              <p class="participant-model-id">${escapeHtml(participant.model)}</p>
+              <div class="participant-stats">
+                <span>${participant.calls} calls</span>
+                <span>${participant.tokens.toLocaleString()} tok</span>
+                <span>${formatUsd(participant.costUsd)}</span>
+                ${participant.durationMs ? `<span>${Math.round(participant.durationMs / 1000)}s</span>` : ''}
+              </div>
+              ${participant.roles.length ? `<p class="participant-roles">${participant.roles.map((role) => escapeHtml(role.replace(/_/g, ' '))).join(' · ')}</p>` : ''}
+            </div>
+            <button type="button" class="participant-open" data-participant-open="${participant.isChair ? 'chair' : arenaIndex}" ${!participant.isChair && arenaIndex < 0 ? 'disabled' : ''}>Inspect</button>
+          </article>`;
+        }).join('')}
+      </div>
+    </section>
+  </div>`;
 }
 
 export function renderInspector(
   root: HTMLElement,
   msg: AssistantMessage | undefined,
   turnIndex: number,
-  _mode: string
+  mode: string
 ) {
-  const s = getState();
-  const meta = msg?.metadata || {};
-  const ctx = buildTurnContext(s.conversation, msg ?? null, turnIndex);
-  const eq = meta.execution_quality as Record<string, unknown> | undefined;
-  const agg = meta.aggregate_rankings as Record<string, unknown>[] | undefined;
-  const failures = (meta.model_failures as ModelFailure[]) || [];
-  const health = squadHealth(ctx.respondedCount, ctx.squadSize);
-
-  const ctxBody = `
-    ${ctx.userQuery ? `<p class="insp-lead">${escapeHtml(ctx.userQuery.slice(0, 72))}${ctx.userQuery.length > 72 ? '…' : ''}</p>` : '<p class="meta">—</p>'}
-    ${ctx.contextChunkCount ? `<p class="insp-kicker">${ctx.contextChunkCount} RAG chunks</p>` : '<p class="meta">No RAG</p>'}
-    <div class="insp-model-btns">
-      ${ctx.modelPrompts.length > 1
-        ? `<button type="button" class="insp-mini" data-ctx-model="-1">Shared prompt</button>`
-        : ''}
-      ${ctx.modelPrompts
-        .map((m, i) => {
-          const short = m.model.split('/').pop() || m.model;
-          return `<button type="button" class="insp-mini" data-ctx-model="${i}">${escapeHtml(short)}</button>`;
-        })
-        .join('')}
-    </div>`;
-
-  const rankBody = agg?.length
-    ? agg
-        .slice(0, 5)
-        .map((a, i) => {
-          const rank = a.avg_rank ?? a.average_rank;
-          return `<p><b>#${i + 1}</b> ${escapeHtml(String(a.model || '').split('/').pop() || '')}${rank != null ? ` · ${rank}` : ''}</p>`;
-        })
-        .join('')
-    : '<p class="meta">—</p>';
-
-  const failKinds = failuresByKind(failures);
-  const kindSummary = Object.entries(failKinds)
-    .map(([k, n]) => `${k.replace(/_/g, ' ')}: ${n}`)
-    .join('<br>');
-
-  const qBody = eq
-    ? `<p><b>${escapeHtml(String(eq.severity || 'ok'))}</b></p>
-       <p>${eq.acceptable ? 'acceptable' : 'review'}</p>
-       ${failures.length ? `<p class="insp-kicker ${health === 'bad' ? 'tone-bad' : health === 'warn' ? 'tone-warn' : ''}">${failures.length} failure(s)</p>` : ''}
-       ${kindSummary ? `<p class="meta">${kindSummary}</p>` : ''}`
-    : failures.length
-      ? `<p class="insp-kicker tone-bad">${failures.length} failure(s)</p>${kindSummary ? `<p class="meta">${kindSummary}</p>` : ''}`
-      : ctx.squadSize > 0 && ctx.respondedCount < ctx.squadSize
-        ? `<p class="insp-kicker tone-warn">Quality metadata missing</p><p class="meta">${ctx.respondedCount} / ${ctx.squadSize} responded</p>`
-      : '<p class="meta">—</p>';
-
-  const col = s.inspectorColumn;
+  const state = getState();
+  const participants = participantViews(msg, mode, state.modeProgress.activeModel);
+  const trace = executionTrace(msg, mode);
+  const arenaCount = participants.filter((participant) => !participant.isChair).length;
+  const succeeded = trace?.summary.participant_succeeded ?? participants.filter(
+    (participant) => !participant.isChair && participant.succeededSteps > 0
+  ).length;
+  const failures = trace?.summary.participant_failed ?? participants.filter(
+    (participant) => !participant.isChair && participant.failedSteps > 0 && !participant.succeededSteps
+  ).length;
+  const pulse = buildPulse(msg, mode, state.isRunning, state.modeProgress);
+  const summaries = state.conversations;
+  const sessionTurns = assistantMessages(state.conversation).length;
+  const sessionCost = assistantMessages(state.conversation).reduce(
+    (sum, message) => sum + turnCostFromMessage(message).cost_usd,
+    0
+  );
 
   root.innerHTML = `
-    <div class="insp-grid">
-      <div class="insp-heads">
-        ${headCell('context', 'Context', col === 'context')}
-        ${headCell('rankings', 'Rankings', col === 'rankings')}
-        ${headCell('quality', 'Quality', col === 'quality')}
-      </div>
-      <div class="insp-bodies">
-        <div class="insp-body${col === 'context' ? ' on' : ''}" data-insp-body="context">${ctxBody}</div>
-        <div class="insp-body${col === 'rankings' ? ' on' : ''}" data-insp-body="rankings">${rankBody}<p class="insp-hint">Peer review →</p></div>
-        <div class="insp-body${col === 'quality' ? ' on' : ''}" data-insp-body="quality">${qBody}<p class="insp-hint">Full report →</p></div>
-      </div>
+    <div class="rail-instruments">
+      <section class="rail-panel participants-panel">
+        <div class="rail-panel-head">
+          <div><p class="rail-eyebrow">Roster</p><h2>Participants</h2></div>
+          <span class="rail-panel-stat ${failures ? 'tone-bad' : ''}">${succeeded}/${arenaCount}</span>
+        </div>
+        <div class="rail-panel-body" data-rail-scroll="participants">
+          <div class="avatar-stack">${participants.map((participant) => renderAvatar(participant, true)).join('')}</div>
+          <p class="participant-summary">${arenaCount} arena model${arenaCount === 1 ? '' : 's'}${participants.some((participant) => participant.isChair) ? ' + chair' : ''}${failures ? ` · ${failures} failed` : ''}</p>
+          <button type="button" class="rail-action" data-show-participants>Show participants</button>
+        </div>
+      </section>
+
+      <section class="rail-panel pulse-panel tone-${pulse.tone}">
+        <div class="rail-panel-head">
+          <div><p class="rail-eyebrow">${escapeHtml(pulse.modeLabel)}</p><h2>Deliberation pulse</h2></div>
+          <span class="pulse-dot"></span>
+        </div>
+        <div class="rail-panel-body" data-rail-scroll="pulse">
+          <p class="pulse-label">${escapeHtml(pulse.signalLabel)}</p>
+          <p class="pulse-value">${escapeHtml(pulse.signalValue)}</p>
+          <p class="pulse-detail">${escapeHtml(pulse.detail)}</p>
+          <p class="pulse-applicability">${escapeHtml(pulse.applicability)}</p>
+          <button type="button" class="rail-action" data-pulse-view="${pulse.targetView}">${pulse.targetView === 'rankings' ? 'Inspect rankings' : pulse.targetView === 'quality' ? 'Open quality' : 'Inspect steps'}</button>
+        </div>
+      </section>
+
+      <section class="rail-panel cost-panel">
+        <div class="rail-panel-head">
+          <div><p class="rail-eyebrow">Spend</p><h2>Cost</h2></div>
+          <span class="rail-panel-stat">${formatUsd(sessionCost)}</span>
+        </div>
+        <div class="rail-panel-body" data-rail-scroll="cost">
+          <p class="cost-session-meta">${sessionTurns} turn${sessionTurns === 1 ? '' : 's'} in current session</p>
+          ${renderCostPanel(costState, state.conversation, summaries, msg)}
+        </div>
+      </section>
     </div>
+    ${participantDialog(participants, msg)}
   `;
 
-  root.querySelectorAll('[data-insp-col]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openInspectorColumn((btn as HTMLElement).dataset.inspCol as 'context' | 'rankings' | 'quality');
+  const rerender = () => renderInspector(root, msg, turnIndex, mode);
+
+  root.querySelector('[data-show-participants]')?.addEventListener('click', () => {
+    participantsOpen = true;
+    rerender();
+  });
+  root.querySelectorAll('[data-participant-close]').forEach((element) => {
+    element.addEventListener('click', (event) => {
+      if (event.currentTarget === event.target || (event.currentTarget as HTMLElement).classList.contains('participant-close')) {
+        participantsOpen = false;
+        rerender();
+      }
     });
   });
-
-  root.querySelectorAll('[data-insp-body]').forEach((el) => {
-    el.addEventListener('click', () => {
-      openInspectorColumn((el as HTMLElement).dataset.inspBody as 'context' | 'rankings' | 'quality');
+  root.querySelectorAll('[data-participant-open]').forEach((element) => {
+    element.addEventListener('click', () => {
+      const target = (element as HTMLElement).dataset.participantOpen;
+      participantsOpen = false;
+      if (target === 'chair') setDeckView('verdict');
+      else if (target != null && Number(target) >= 0) {
+        setContextPromptModel(Number(target));
+        setContextInjectionSelection(`arena-${Number(target)}`);
+      }
+      else setDeckView('answers');
     });
   });
-
-  root.querySelectorAll('[data-ctx-model]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setContextPromptModel(Number((btn as HTMLElement).dataset.ctxModel));
+  root.querySelector('[data-pulse-view]')?.addEventListener('click', (event) => {
+    setDeckView((event.currentTarget as HTMLElement).dataset.pulseView as 'answers' | 'rankings' | 'quality');
+  });
+  root.querySelectorAll('[data-cost-series]').forEach((element) => {
+    element.addEventListener('click', () => {
+      const series = (element as HTMLElement).dataset.costSeries as CostSeriesId;
+      const selected = costState.selected.includes(series)
+        ? costState.selected.filter((item) => item !== series)
+        : [...costState.selected, series];
+      costState = {
+        ...costState,
+        selected,
+        breakdown: selected.length === 1 ? costState.breakdown : false,
+      };
+      rerender();
+    });
+  });
+  root.querySelector('[data-cost-break]')?.addEventListener('click', () => {
+    if (costState.selected.length !== 1) return;
+    costState = { ...costState, breakdown: !costState.breakdown };
+    rerender();
+  });
+  root.querySelectorAll('[data-cost-top]').forEach((element) => {
+    element.addEventListener('click', () => {
+      costState = { ...costState, topN: Number((element as HTMLElement).dataset.costTop) };
+      rerender();
     });
   });
 }

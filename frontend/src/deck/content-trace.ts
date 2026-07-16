@@ -96,10 +96,16 @@ export function renderContextTrace(text: string, label = ''): string {
   return renderRichContent(text, langFromPath(label), label);
 }
 
-function renderAdditiveItem(id: string, body: string, label?: string): string {
+function renderAdditiveItem(
+  id: string,
+  body: string,
+  expanded: ReadonlySet<string>,
+  key = id,
+  label?: string
+): string {
   const meta = additiveTemplate(id);
   const title = label || meta?.label || id;
-  return `<details class="trace-additive">
+  return `<details class="trace-additive" data-additive-key="${escapeHtml(key)}"${expanded.has(key) ? ' open' : ''}>
     <summary><code>${escapeHtml(id)}</code> · ${escapeHtml(title)}</summary>
     <pre class="ctx-pre ctx-chunk-prose">${escapeHtml(body)}</pre>
   </details>`;
@@ -119,7 +125,8 @@ interface SummarizeJobRow {
  */
 export function renderArenaAdditions(
   msg: AssistantMessage | null,
-  ctx: TurnContextSnapshot
+  ctx: TurnContextSnapshot,
+  expandedKeys: string[] = []
 ): string {
   if (!msg) return '';
 
@@ -128,14 +135,17 @@ export function renderArenaAdditions(
   const stage2 = msg.stage2 || [];
   const hasRag = ctx.contextChunkCount > 0;
   const firstFull = ctx.modelPrompts[0]?.promptFull;
+  const isCouncil = ctx.mode === 'council' || ctx.mode === 'baseline';
+  const arenaStepCount = ctx.executionTrace?.summary.arena_steps || stage1.length;
+  const expanded = new Set(expandedKeys);
 
   const refs = [
     `<li><button type="button" class="ctx-link" data-goto-user>User question</button> — bare text you typed (panel above).</li>`,
     firstFull || hasRag
-      ? `<li><button type="button" class="ctx-link" data-goto-injected>Injected context</button> — CodeRAG bundle + query as sent in stage 1.</li>`
+      ? `<li><button type="button" class="ctx-link" data-goto-injected>Injected context</button> — CodeRAG bundle + query as sent to ${isCouncil ? 'stage 1' : 'each traced mode step'}.</li>`
       : '',
-    stage1.length
-      ? `<li><button type="button" class="ctx-link" data-goto-answers>Stage 1 answers</button> — ${stage1.length} model response(s).</li>`
+    arenaStepCount
+      ? `<li><button type="button" class="ctx-link" data-goto-answers>${isCouncil ? 'Stage 1 answers' : 'Execution sequence'}</button> — ${arenaStepCount} traced arena step(s).</li>`
       : '',
     stage2.length
       ? `<li><button type="button" class="ctx-link" data-goto-rankings>Stage 2 rankings</button> — ${stage2.length} peer evaluation(s).</li>`
@@ -146,20 +156,21 @@ export function renderArenaAdditions(
 
   const additives: string[] = [];
 
-  additives.push(renderAdditiveItem(PROMPT_IDS.stage1, stage1WrapperFromFull(firstFull)));
+  additives.push(renderAdditiveItem(PROMPT_IDS.stage1, stage1WrapperFromFull(firstFull), expanded));
 
   if (hasRag) {
-    additives.push(renderAdditiveItem(PROMPT_IDS.ragControl, ADDITIVE_TEMPLATES[PROMPT_IDS.ragControl].text));
+    additives.push(renderAdditiveItem(PROMPT_IDS.ragControl, ADDITIVE_TEMPLATES[PROMPT_IDS.ragControl].text, expanded));
   }
 
   const jobs = (msg.metadata?.summarize_jobs as SummarizeJobRow[]) || [];
-  for (const job of jobs) {
+  for (const [index, job] of jobs.entries()) {
     const pid = job.prompt_id || PROMPT_IDS.summarizeRag;
     const tpl = additiveTemplate(pid);
     const label = tpl
       ? `${tpl.label} → ${(job.target_model_id || '?').split('/').pop()} (${job.outcome || '?'})`
       : `${pid} → ${job.target_model_id || '?'}`;
-    additives.push(renderAdditiveItem(pid, tpl?.text || pid, label));
+    const key = `${pid}:${job.target_model_id || index}`;
+    additives.push(renderAdditiveItem(pid, tpl?.text || pid, expanded, key, label));
   }
 
   if (Object.keys(inj.summarizeTargets).length && !jobs.length) {
@@ -175,13 +186,13 @@ export function renderArenaAdditions(
   }
 
   if (stage2.length) {
-    additives.push(renderAdditiveItem(PROMPT_IDS.rank, ADDITIVE_TEMPLATES[PROMPT_IDS.rank].text));
+    additives.push(renderAdditiveItem(PROMPT_IDS.rank, ADDITIVE_TEMPLATES[PROMPT_IDS.rank].text, expanded));
   }
 
   if (msg.stage3) {
-    additives.push(renderAdditiveItem(PROMPT_IDS.chairPreamble, ADDITIVE_TEMPLATES[PROMPT_IDS.chairPreamble].text));
+    additives.push(renderAdditiveItem(PROMPT_IDS.chairPreamble, ADDITIVE_TEMPLATES[PROMPT_IDS.chairPreamble].text, expanded));
     additives.push(
-      renderAdditiveItem(PROMPT_IDS.chairInstructions, ADDITIVE_TEMPLATES[PROMPT_IDS.chairInstructions].text)
+      renderAdditiveItem(PROMPT_IDS.chairInstructions, ADDITIVE_TEMPLATES[PROMPT_IDS.chairInstructions].text, expanded)
     );
   }
 

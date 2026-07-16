@@ -33,6 +33,12 @@ async def test_round_robin_chains_prior_draft(monkeypatch):
     assert drafts[1]["had_prior_draft"] is True
     assert drafts[1]["prior_draft"] == "DRAFT_A"
     assert "DRAFT_A" in calls[1]
+    assert calls[1].count("ctx+Q") == 1
     assert "(none yet)" not in calls[1]
     assert "Prior draft:" in drafts[1]["prompt_preview"]
+    assert drafts[1]["orchestration_text"] == drafts[1]["turn_instruction"]
+    assert "ctx+Q" not in drafts[1]["orchestration_text"]
     assert stage3["response"] == "CHAIR"
+    assert "DRAFT_B" in stage3["orchestration_text"]
+    assert "attached separately" in stage3["orchestration_text"]
+    assert "ctx+Q" not in stage3["orchestration_text"]

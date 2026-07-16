@@ -1,3 +1,4 @@
+import { traceRows } from './execution-trace';
 import type { AssistantMessage } from './types';
 
 export function turnCostFromMessage(msg: AssistantMessage) {
@@ -9,7 +10,9 @@ export function turnCostFromMessage(msg: AssistantMessage) {
       total_tokens: Number(cost.total_tokens) || 0,
     };
   }
-  const steps = (meta.steps as Record<string, unknown>[]) || [];
+  const mode = String(meta.mode || 'council');
+  const steps = traceRows(msg, mode)
+    .flatMap((row) => (row.payload ? [row.payload] : []));
   let costUsd = 0;
   let totalTokens = 0;
   for (const step of steps) {

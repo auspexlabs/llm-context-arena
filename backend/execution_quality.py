@@ -64,6 +64,8 @@ def assess_execution_quality(
     models = arena_models or meta.get("arena_models") or []
     failures = list(meta.get("model_failures") or [])
     steps = list(meta.get("steps") or [])
+    trace = meta.get("execution_trace") or {}
+    trace_summary = trace.get("summary") or {}
     issues: List[Dict[str, Any]] = []
     recommendations: List[str] = []
     failure_kinds: List[str] = []
@@ -179,15 +181,19 @@ def assess_execution_quality(
 
     if mode_key == "round_robin":
         drafts = _draft_steps(steps)
-        expected_drafts = len(drafts) or len(models)
-        successful_drafts = sum(1 for s in drafts if _has_content(s.get("response")))
-        failed_drafts = max(0, len(drafts) - successful_drafts)
+        expected_drafts = int(trace_summary.get("drafts_expected") or len(drafts) or len(models))
+        successful_drafts = int(
+            trace_summary.get("drafts_succeeded")
+            if trace_summary.get("drafts_succeeded") is not None
+            else sum(1 for s in drafts if _has_content(s.get("response")))
+        )
+        failed_drafts = max(0, expected_drafts - successful_drafts)
         if failed_drafts:
             issues.append(
                 {
                     "code": "empty_draft_responses",
                     "failed": failed_drafts,
-                    "expected": len(drafts),
+                    "expected": expected_drafts,
                     "succeeded": successful_drafts,
                 }
             )
@@ -196,7 +202,7 @@ def assess_execution_quality(
                 "All round-robin draft models failed. Retry with @tokenbudget 8000, "
                 "paid models, or a smaller squad."
             )
-        elif successful_drafts == 1 and len(drafts) > 1:
+        elif successful_drafts == 1 and expected_drafts > 1:
             issues.append(
                 {
                     "code": "rr_chain_degraded",
@@ -205,7 +211,7 @@ def assess_execution_quality(
                         "chain did not run."
                     ),
                     "succeeded": 1,
-                    "expected": len(drafts),
+                    "expected": expected_drafts,
                 }
             )
             recommendations.append(
@@ -246,9 +252,9 @@ def assess_execution_quality(
 
     elif mode_key == "fight":
         for role_prefix, label in (
-            ("answer_", "answers"),
-            ("critique_", "critiques"),
-            ("defense_", "defenses"),
+            ("answer", "answers"),
+            ("critique", "critiques"),
+            ("defense", "defenses"),
         ):
             role_steps = _steps_with_role_prefix(steps, role_prefix)
             if not role_steps:
@@ -337,6 +343,7 @@ def assess_execution_quality(
             "has_final_answer": is_usable_final_synthesis(stage3),
             "summarize_jobs": len(summarize_jobs),
             "summarize_failures": len(summarize_failures),
+            "trace": trace_summary,
         },
     }
 

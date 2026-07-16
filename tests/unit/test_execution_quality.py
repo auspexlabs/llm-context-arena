@@ -202,3 +202,25 @@ def test_assess_from_response_dict():
     quality = assess_from_response_dict(payload)
     assert quality["acceptable"] is False
     assert quality["stats"]["model_failures"] == 1
+
+
+def test_fight_empty_phase_is_reported_from_canonical_role_names():
+    quality = assess_execution_quality(
+        mode="fight",
+        metadata={
+            "arena_models": ["a", "b"],
+            "steps": [
+                {"role": "answer", "model": "a", "response": "position"},
+                {"role": "answer", "model": "b", "response": "position"},
+                {"role": "critique", "model": "a", "response": ""},
+                {"role": "critique", "model": "b", "response": "critique"},
+                {"role": "defense", "model": "a", "response": "defense"},
+                {"role": "defense", "model": "b", "response": "defense"},
+                {"role": "chair_final", "model": "chair", "response": "final"},
+            ],
+        },
+        stage3={"model": "chair", "response": "final"},
+    )
+
+    assert quality["acceptable"] is False
+    assert any(issue["code"] == "empty_critiques" for issue in quality["issues"])

@@ -64,6 +64,8 @@ const initial: DeckState = {
   ragListExpanded: false,
   ragChunksExpanded: [],
   contextPromptModel: -1,
+  contextInjectionSelection: null,
+  contextAdditivesExpanded: [],
   failuresExpanded: [],
   takeControl: false,
   isRunning: false,
@@ -164,6 +166,8 @@ function resetTurnUi() {
     ragListExpanded: false,
     ragChunksExpanded: [] as string[],
     contextPromptModel: -1,
+    contextInjectionSelection: null as string | null,
+    contextAdditivesExpanded: [] as string[],
     failuresExpanded: [] as string[],
   };
 }
@@ -171,6 +175,18 @@ function resetTurnUi() {
 export function setContextPromptModel(index: number) {
   const scope = state.deckView === 'context' ? 'viewport' : 'full';
   patch({ contextPromptModel: index, deckView: 'context', inspectorColumn: 'context' }, scope);
+}
+
+export function setContextInjectionSelection(key: string | null) {
+  patch({ contextInjectionSelection: key }, 'viewport');
+}
+
+export function setContextAdditiveExpanded(key: string, open: boolean) {
+  const expanded = new Set(state.contextAdditivesExpanded);
+  if (expanded.has(key) === open) return;
+  if (open) expanded.add(key);
+  else expanded.delete(key);
+  patch({ contextAdditivesExpanded: [...expanded] }, 'viewport');
 }
 
 export function expandAllRag(chunkKeys: string[]) {

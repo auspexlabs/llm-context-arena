@@ -1,43 +1,81 @@
-"""Tests for opt-in execution detail route."""
+"""Execution detail route follows canonical trace topology."""
 
-from fastapi.testclient import TestClient
-
-from backend.main import app
+from backend.routes.execution import _steps_from_trace
 
 
-def test_message_execution_failures_only(tmp_path, monkeypatch):
-    from backend.dependencies import get_storage_service
-    from backend.storage_service import StorageService
-
-    storage = StorageService(data_dir=str(tmp_path / "conversations"))
-    conv = storage.create_conversation("c1", mode="fight")
-    storage.add_user_message("c1", "test")
-    storage.add_assistant_message(
-        "c1",
-        [],
-        [],
-        {"model": "chair", "response": "done"},
-        metadata={
-            "mode": "fight",
-            "model_failures": [
-                {
-                    "model": "qwen/qwen3-coder:free",
-                    "stage": "stage1",
-                    "role": "answer",
-                    "status": 429,
-                    "message": "rate limited",
-                }
-            ],
+def test_steps_from_trace_resolves_each_council_ranking_payload():
+    stage1 = [
+        {"model": f"m{i}", "role": "answer", "response": f"a{i}"}
+        for i in range(2)
+    ]
+    stage2 = [
+        {"model": f"m{i}", "role": "rankings", "ranking": f"r{i}"}
+        for i in range(2)
+    ]
+    stage3 = {"model": "chair", "role": "chair_final", "response": "final"}
+    nodes = [
+        {
+            "step_id": "answer-1",
+            "ordinal": 1,
+            "kind": "answer",
+            "role": "answer",
+            "model": "m0",
+            "status": "succeeded",
+            "terminal": False,
+            "predecessor_step_ids": [],
+            "source": {"collection": "stage1", "index": 0},
         },
-    )
+        {
+            "step_id": "answer-2",
+            "ordinal": 2,
+            "kind": "answer",
+            "role": "answer",
+            "model": "m1",
+            "status": "succeeded",
+            "terminal": False,
+            "predecessor_step_ids": [],
+            "source": {"collection": "stage1", "index": 1},
+        },
+        {
+            "step_id": "ranking-1",
+            "ordinal": 3,
+            "kind": "ranking",
+            "role": "rankings",
+            "model": "m0",
+            "status": "succeeded",
+            "terminal": False,
+            "predecessor_step_ids": ["answer-1", "answer-2"],
+            "source": {"collection": "stage2", "index": 0},
+        },
+        {
+            "step_id": "ranking-2",
+            "ordinal": 4,
+            "kind": "ranking",
+            "role": "rankings",
+            "model": "m1",
+            "status": "succeeded",
+            "terminal": False,
+            "predecessor_step_ids": ["answer-1", "answer-2"],
+            "source": {"collection": "stage2", "index": 1},
+        },
+        {
+            "step_id": "chair-1",
+            "ordinal": 5,
+            "kind": "verdict",
+            "role": "chair_final",
+            "model": "chair",
+            "status": "succeeded",
+            "terminal": True,
+            "predecessor_step_ids": ["answer-1", "answer-2", "ranking-1", "ranking-2"],
+            "source": {"collection": "stage3", "index": 0},
+        },
+    ]
+    msg = {"stage1": stage1, "stage2": stage2, "stage3": stage3}
+    meta = {"steps": stage1 + [{"role": "rankings"}] + [stage3], "execution_trace": {"version": 1, "steps": nodes}}
 
-    app.dependency_overrides[get_storage_service] = lambda: storage
-    client = TestClient(app)
-    try:
-        resp = client.get("/api/conversations/c1/messages/1/execution")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data["model_failures"]) == 1
-        assert data["model_failures"][0]["status"] == 429
-    finally:
-        app.dependency_overrides.clear()
+    rows = _steps_from_trace(msg, meta)
+
+    assert len(rows) == 5
+    assert [row["kind"] for row in rows] == ["answer", "answer", "ranking", "ranking", "verdict"]
+    assert [row.get("ranking") for row in rows[2:4]] == ["r0", "r1"]
+    assert rows[-1]["terminal"] is True

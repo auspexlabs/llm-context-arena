@@ -15,6 +15,7 @@ class TestSquadPresets:
         names = list_squad_names()
         assert "normal" in names
         assert "freebee9" in names
+        assert "cheap_pros" in names
 
     def test_normal_squad_has_five_models(self):
         squad = load_squad_preset("normal")
@@ -26,6 +27,14 @@ class TestSquadPresets:
         squad = load_squad_preset("freebee9")
         assert squad["name"] == "freebee9"
         assert len(squad["arena_models"]) == 9
+
+    def test_cheap_pros_squad_has_four_paid_models_and_chair(self):
+        squad = load_squad_preset("cheap_pros")
+        assert squad["name"] == "cheap_pros"
+        assert squad["label"] == "Cheap Pro's"
+        assert len(squad["arena_models"]) == 4
+        assert all(not model.endswith(":free") for model in squad["arena_models"])
+        assert not squad["chairman_model"].endswith(":free")
 
     def test_unknown_squad_raises(self):
         with pytest.raises(ValueError, match="Unknown arena squad"):
