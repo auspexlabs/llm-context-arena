@@ -19,6 +19,7 @@ _STEP_KEYS = frozenset(
         "prompt_preview",
         "prompt_full",
         "orchestration_text",
+        "prompt_provenance",
         "est_tokens",
         "context_tokens",
         "duration_ms",
@@ -65,6 +66,9 @@ def _steps_from_trace(msg: Dict[str, Any], meta: Dict[str, Any]) -> List[Dict[st
                 "status": node.get("status"),
                 "terminal": bool(node.get("terminal")),
                 "predecessor_step_ids": node.get("predecessor_step_ids") or [],
+                "prompt_input_artifact_ids": node.get("prompt_input_artifact_ids") or [],
+                "prompt_provenance": node.get("prompt_provenance")
+                or row.get("prompt_provenance"),
                 "source": source,
             }
         )
@@ -90,6 +94,7 @@ def _filter_steps(
             "status",
             "terminal",
             "predecessor_step_ids",
+            "prompt_input_artifact_ids",
             "source",
         ):
             if key in step:
@@ -97,6 +102,7 @@ def _filter_steps(
         if "prompts" in include:
             row["prompt_preview"] = step.get("prompt_preview")
             row["orchestration_text"] = step.get("orchestration_text")
+            row["prompt_provenance"] = step.get("prompt_provenance")
         if "full_prompts" in include:
             row["prompt_full"] = step.get("prompt_full")
         if "cost" in include:

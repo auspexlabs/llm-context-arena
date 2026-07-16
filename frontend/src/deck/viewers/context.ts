@@ -4,7 +4,7 @@ import { langFromPath } from '../highlight-code';
 import { renderInjectionWorkflow } from '../injection-workflow';
 import { renderRichContent } from '../markdown';
 import { preventFocusScroll, setScrollAnchor } from '../scroll-anchor';
-import { setContextAdditiveExpanded, setDeckView } from '../store';
+import { focusTraceStep, setContextAdditiveExpanded, setDeckView } from '../store';
 import { chunkKey, type TurnContextSnapshot } from '../turn-context';
 import {
   collapseAllRag,
@@ -110,6 +110,12 @@ export function renderContextViewport(
     node.addEventListener('click', () => {
       setContextInjectionSelection(null);
       container.querySelector('#ctx-rag')?.scrollIntoView({ block: 'start' });
+    });
+  });
+  container.querySelectorAll('[data-injection-goto-step]').forEach((node) => {
+    node.addEventListener('click', () => {
+      const stepId = (node as HTMLElement).dataset.injectionGotoStep;
+      if (stepId) focusTraceStep(stepId);
     });
   });
 

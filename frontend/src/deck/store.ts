@@ -65,6 +65,7 @@ const initial: DeckState = {
   ragChunksExpanded: [],
   contextPromptModel: -1,
   contextInjectionSelection: null,
+  focusedTraceStepId: null,
   contextAdditivesExpanded: [],
   failuresExpanded: [],
   takeControl: false,
@@ -167,6 +168,7 @@ function resetTurnUi() {
     ragChunksExpanded: [] as string[],
     contextPromptModel: -1,
     contextInjectionSelection: null as string | null,
+    focusedTraceStepId: null as string | null,
     contextAdditivesExpanded: [] as string[],
     failuresExpanded: [] as string[],
   };
@@ -179,6 +181,20 @@ export function setContextPromptModel(index: number) {
 
 export function setContextInjectionSelection(key: string | null) {
   patch({ contextInjectionSelection: key }, 'viewport');
+}
+
+export function focusTraceStep(stepId: string) {
+  patch({
+    focusedTraceStepId: stepId,
+    contextInjectionSelection: null,
+    deckView: 'answers',
+    focusedStep: 'answers',
+    inspectorColumn: 'context',
+  });
+}
+
+export function clearTraceStepFocus() {
+  if (state.focusedTraceStepId) patch({ focusedTraceStepId: null }, 'viewport');
 }
 
 export function setContextAdditiveExpanded(key: string, open: boolean) {

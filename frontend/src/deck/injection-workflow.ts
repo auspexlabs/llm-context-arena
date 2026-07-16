@@ -1,5 +1,6 @@
 import { escapeHtml } from './escape';
 import type { ModelPromptEntry, TurnContextSnapshot } from './turn-context';
+import type { PromptProvenance } from './types';
 
 export interface InjectionPayload {
   key: string;
@@ -8,6 +9,7 @@ export interface InjectionPayload {
   recipient: string;
   status: string;
   payload: string;
+  promptProvenance: PromptProvenance | null;
   contextTokens: number | null;
   kind: 'source' | 'arena' | 'chair';
   stageKind: string;
@@ -87,6 +89,7 @@ export function injectionPayloads(ctx: TurnContextSnapshot): InjectionPayload[] 
       payload: hasRag
         ? `CodeRAG retrieval occurred. ${ctx.contextChunkCount} chunks were attached to the grounded question.\n\nThe retrieved text is intentionally shown only in RAG Retrieval.`
         : 'No CodeRAG payload was attached to this turn.',
+      promptProvenance: null,
       contextTokens: ctx.contextTokens,
       kind: 'source',
       stageKind: 'context',
@@ -108,6 +111,7 @@ export function injectionPayloads(ctx: TurnContextSnapshot): InjectionPayload[] 
       status: entry.status || 'unknown',
       payload: entry.orchestrationText ||
         `Curia routed the grounded question to this model for ${entry.role || 'an arena step'}.\n\nThe orchestration text was not persisted separately for this legacy turn.`,
+      promptProvenance: entry.promptProvenance,
       contextTokens: null,
       kind: 'arena',
       stageKind: entry.kind || entry.role || 'arena',
@@ -133,6 +137,7 @@ export function injectionPayloads(ctx: TurnContextSnapshot): InjectionPayload[] 
       recipient: 'Chair',
       status: ctx.executionTrace?.summary.final_status || 'unknown',
       payload: ctx.chairOrchestrationText || legacyChairOrchestration(ctx),
+      promptProvenance: ctx.chairPromptProvenance,
       contextTokens: null,
       kind: 'chair',
       stageKind: 'verdict',
@@ -252,6 +257,18 @@ function modal(payload: InjectionPayload | undefined): string {
   const ragLink = payload.hasRagLink
     ? '<button type="button" class="ctx-link injection-rag-link" data-injection-goto-rag>Open RAG retrieval →</button>'
     : '';
+  const promptBody = payload.promptProvenance
+    ? `<div class="injection-payload injection-provenance">${payload.promptProvenance.parts.map((part) => {
+        if (part.kind === 'text') return escapeHtml(part.text || '');
+        if (part.kind === 'context_ref') {
+          return `<button type="button" class="injection-artifact-link context" data-injection-goto-rag>[${escapeHtml(part.label || 'Grounded context')} attached separately]</button>`;
+        }
+        const label = `[${part.label || 'model output'} artifact attached]`;
+        return part.producer_step_id
+          ? `<button type="button" class="injection-artifact-link" data-injection-goto-step="${escapeHtml(part.producer_step_id)}">${escapeHtml(label)}</button>`
+          : `<span class="injection-artifact-missing">${escapeHtml(label)}</span>`;
+      }).join('')}</div>`
+    : `<pre class="injection-payload"><code>${escapeHtml(payload.payload || 'No persisted payload was recorded for this node.')}</code></pre>`;
   return `<div class="injection-modal-backdrop" data-injection-close>
     <section class="injection-modal" role="dialog" aria-modal="true" aria-labelledby="injection-modal-title">
       <header class="injection-modal-head">
@@ -263,7 +280,7 @@ function modal(payload: InjectionPayload | undefined): string {
         <button type="button" class="participant-close" data-injection-close aria-label="Close injected payload">×</button>
       </header>
       <div class="injection-modal-note"><span>${note}</span>${ragLink}</div>
-      <pre class="injection-payload"><code>${escapeHtml(payload.payload || 'No persisted payload was recorded for this node.')}</code></pre>
+      ${promptBody}
     </section>
   </div>`;
 }

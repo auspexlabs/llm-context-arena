@@ -1,6 +1,13 @@
 import { executionTrace, tracePayload, traceStepById } from './execution-trace';
 import { userQueryBefore } from './normalize';
-import type { AssistantMessage, Conversation, ExecutionTrace, Message, TraceStepStatus } from './types';
+import type {
+  AssistantMessage,
+  Conversation,
+  ExecutionTrace,
+  Message,
+  PromptProvenance,
+  TraceStepStatus,
+} from './types';
 
 export interface RagChunk {
   chunk_id?: string;
@@ -29,6 +36,7 @@ export interface ModelPromptEntry {
   predecessorModel: string | null;
   priorDraft: string | null;
   orchestrationText: string | null;
+  promptProvenance: PromptProvenance | null;
   parsedRanking: string[];
 }
 
@@ -51,6 +59,7 @@ export interface TurnContextSnapshot {
   chairPromptPreview: string | null;
   chairPromptFull: string | null;
   chairOrchestrationText: string | null;
+  chairPromptProvenance: PromptProvenance | null;
   chairPriorDraft: string | null;
   aggregateRankings: AggregateRankingEntry[];
   ragChunks: RagChunk[];
@@ -88,6 +97,7 @@ function modelPromptsFromStage1(stage1: AssistantMessage['stage1']): ModelPrompt
       predecessorModel: null,
       priorDraft: null,
       orchestrationText: null,
+      promptProvenance: null,
       parsedRanking: [],
     };
   });
@@ -124,6 +134,10 @@ function modelPromptsFromTrace(msg: AssistantMessage, mode: string, trace: Execu
           : typeof payload?.turn_instruction === 'string'
             ? payload.turn_instruction
             : null,
+      promptProvenance:
+        node.prompt_provenance ??
+        (payload?.prompt_provenance as PromptProvenance | undefined) ??
+        null,
       parsedRanking: Array.isArray(payload?.parsed_ranking)
         ? payload.parsed_ranking.map(String)
         : [],
@@ -155,6 +169,11 @@ export function buildTurnContext(
   const chairPreview = stage3?.prompt_preview ?? null;
   const chairFull = stage3?.prompt_full ?? null;
   const chairOrchestration = stage3?.orchestration_text ?? null;
+  const chairNode = trace ? [...trace.steps].reverse().find((node) => node.terminal) : null;
+  const chairPromptProvenance =
+    chairNode?.prompt_provenance ??
+    ((stage3 as { prompt_provenance?: PromptProvenance } | null | undefined)
+      ?.prompt_provenance ?? null);
   const chairPriorDraft = stage3?.prior_draft ?? null;
   const sharedPreview = first?.promptPreview ?? null;
   const aggregateRankings = Array.isArray(meta.aggregate_rankings)
@@ -183,6 +202,7 @@ export function buildTurnContext(
     chairPromptPreview: chairPreview,
     chairPromptFull: chairFull,
     chairOrchestrationText: chairOrchestration,
+    chairPromptProvenance,
     chairPriorDraft,
     aggregateRankings,
     ragChunks: chunks,

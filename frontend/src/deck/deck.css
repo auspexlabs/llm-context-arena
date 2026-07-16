@@ -1811,6 +1811,38 @@ html, body, #app {
   margin-left: 4px;
 }
 
+.injection-provenance {
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.55;
+}
+
+.injection-artifact-link {
+  display: inline;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.injection-artifact-link:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.injection-artifact-link.context {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.injection-artifact-missing {
+  color: var(--muted);
+}
+
 /* Canonical trace / Round Robin lineage */
 .rr-head {
   display: flex;

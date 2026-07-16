@@ -2,7 +2,7 @@ import { escapeHtml } from '../escape';
 import { executionTrace, tracePayload, traceRows, traceStepById } from '../execution-trace';
 import { deAnonymizeText, renderMarkdown } from '../markdown';
 import { preventFocusScroll } from '../scroll-anchor';
-import { setDeckView } from '../store';
+import { clearTraceStepFocus, getState, setDeckView } from '../store';
 import type { AssistantMessage, CouncilStepId } from '../types';
 
 let activeModelTab = 0;
@@ -157,6 +157,18 @@ function renderFightSteps(container: HTMLElement, msg: AssistantMessage) {
   if (!trace || trace.mode !== 'fight') return false;
   const debate = trace.steps.filter((node) => !node.terminal);
   if (!debate.length) return false;
+  const focusedStepId = getState().focusedTraceStepId;
+  const focusedNode = focusedStepId
+    ? debate.find((node) => node.step_id === focusedStepId)
+    : null;
+  if (
+    focusedNode &&
+    (focusedNode.kind === 'answer' ||
+      focusedNode.kind === 'critique' ||
+      focusedNode.kind === 'defense')
+  ) {
+    activeFightPhase = focusedNode.kind;
+  }
 
   const phases: Array<{ id: 'answer' | 'critique' | 'defense'; label: string; route: string }> = [
     { id: 'answer', label: 'Opening', route: 'Grounded question → opening position' },
@@ -168,6 +180,12 @@ function renderFightSteps(container: HTMLElement, msg: AssistantMessage) {
     activeFightPhase = phases.find((phase) => debate.some((node) => node.kind === phase.id))?.id || 'answer';
   }
   const selectedNodes = debate.filter((node) => node.kind === activeFightPhase);
+  if (focusedNode) {
+    const focusedIndex = selectedNodes.findIndex(
+      (node) => node.step_id === focusedNode.step_id
+    );
+    if (focusedIndex >= 0) activeFightModel = focusedIndex;
+  }
   activeFightModel = Math.min(activeFightModel, Math.max(0, selectedNodes.length - 1));
   const selected = selectedNodes[activeFightModel];
   if (!selected) return false;
@@ -236,19 +254,25 @@ function renderFightSteps(container: HTMLElement, msg: AssistantMessage) {
     });
   });
   container.querySelector('[data-open-fight-context]')?.addEventListener('click', () => setDeckView('context'));
+  if (focusedNode) queueMicrotask(() => clearTraceStepFocus());
   return true;
 }
 
 function renderAnswers(container: HTMLElement, msg: AssistantMessage, isRunning: boolean) {
+  const mode = String(msg.metadata?.mode || 'council');
+  if (mode === 'round_robin' && renderRoundRobinSteps(container, msg)) return;
+  if (mode === 'fight' && renderFightSteps(container, msg)) return;
+  if (
+    mode !== 'council' &&
+    mode !== 'baseline' &&
+    renderPipelineSteps(container, msg, 'Pipeline — early steps')
+  ) return;
   const responses = msg.stage1 || [];
   if (!responses.length && isRunning && msg.loading?.stage1) {
     container.innerHTML = '<h3>Stage 1 — Individual answers</h3><p class="review-hint">Collecting responses…</p>';
     return;
   }
   if (!responses.length) {
-    if (renderRoundRobinSteps(container, msg)) return;
-    if (renderFightSteps(container, msg)) return;
-    if (renderPipelineSteps(container, msg, 'Pipeline — early steps')) return;
     container.innerHTML = '<h3>Stage 1 — Individual answers</h3><p class="empty-state">No responses recorded.</p>';
     return;
   }

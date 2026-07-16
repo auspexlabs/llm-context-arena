@@ -84,6 +84,8 @@ export interface ModelResponse {
   duration_ms?: number;
   prompt_preview?: string;
   prompt_full?: string;
+  orchestration_text?: string;
+  prompt_provenance?: PromptProvenance;
   context_tokens?: number;
   est_tokens?: number;
   ranking?: string;
@@ -103,6 +105,8 @@ export interface RankingEntry {
   total_tokens?: number;
   cost_usd?: number;
   duration_ms?: number;
+  orchestration_text?: string;
+  prompt_provenance?: PromptProvenance;
 }
 
 export interface AssistantMessage {
@@ -129,6 +133,22 @@ export interface TraceFailure {
   failure_kind?: string;
 }
 
+export interface PromptProvenancePart {
+  kind: 'text' | 'context_ref' | 'artifact_ref';
+  text?: string;
+  label?: string;
+  target?: 'rag' | 'answers' | string;
+  artifact_id?: string | null;
+  producer?: { role?: string; model?: string };
+  producer_step_id?: string;
+  producer_status?: TraceStepStatus;
+}
+
+export interface PromptProvenance {
+  version: number;
+  parts: PromptProvenancePart[];
+}
+
 export interface TraceStep {
   step_id: string;
   ordinal: number;
@@ -143,6 +163,8 @@ export interface TraceStep {
   predecessor_step_ids: string[];
   input_artifact_ids: string[];
   output_artifact_id?: string | null;
+  prompt_input_artifact_ids?: string[];
+  prompt_provenance?: PromptProvenance;
   failure?: TraceFailure;
 }
 
@@ -259,6 +281,8 @@ export interface DeckState {
   contextPromptModel: number;
   /** Injection-workflow node whose exact persisted payload is open in the modal. */
   contextInjectionSelection: string | null;
+  /** Canonical trace step selected through an artifact-reference link. */
+  focusedTraceStepId: string | null;
   /** Arena-addition disclosures the user has opened for the selected turn. */
   contextAdditivesExpanded: string[];
   failuresExpanded: string[];

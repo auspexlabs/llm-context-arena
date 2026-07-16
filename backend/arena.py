@@ -15,6 +15,13 @@ from .config import ARENA_MODELS, CHAIRMAN_MODEL
 from .cost_tracking import apply_usage_fields, sum_usage_fields, summarize_turn_cost
 from .execution_quality import CHAIRMAN_SYNTHESIS_ERROR
 from .prompts import render_prompt
+from .prompt_provenance import (
+    artifact_ref,
+    context_ref,
+    provenance,
+    render_projected_prompt,
+    text_part,
+)
 
 COUNCIL_MODES = frozenset({"council", "baseline"})
 
@@ -820,12 +827,24 @@ async def run_mode_fight(
             user_query=user_query,
             peer_positions=peer_positions,
         )
-        critique_orchestration = render_prompt(
+        peer_position_parts: List[Dict[str, Any]] = []
+        for index, other in enumerate(others):
+            if index:
+                peer_position_parts.append(text_part("\n\n"))
+            peer_position_parts.extend(
+                [
+                    text_part(f"{other['model']}:\n"),
+                    artifact_ref(
+                        "opening position",
+                        producer_role="answer",
+                        producer_model=other["model"],
+                    ),
+                ]
+            )
+        critique_orchestration, critique_provenance = render_projected_prompt(
             "fight.critique",
-            user_query="[Grounded topic attached separately; inspect RAG retrieval]",
-            peer_positions="\n\n".join(
-                f"{o['model']}:\n[opening-position artifact attached]" for o in others
-            ),
+            user_query=provenance([context_ref("Grounded topic")]),
+            peer_positions=provenance(peer_position_parts),
         )
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": critique_prompt}])
@@ -844,6 +863,7 @@ async def run_mode_fight(
                 "prompt_preview": critique_prompt[:500],
                 "prompt_full": critique_prompt,
                 "orchestration_text": critique_orchestration,
+                "prompt_provenance": critique_provenance,
                 "est_tokens": max(len(critique_prompt) // 4, 1),
                 "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
                 "duration_ms": elapsed_ms,
@@ -864,13 +884,33 @@ async def run_mode_fight(
             prior_answer=ans["response"],
             peer_critiques=peer_critiques,
         )
-        defense_orchestration = render_prompt(
+        peer_critique_parts: List[Dict[str, Any]] = []
+        for index, critique in enumerate(peer_crits):
+            if index:
+                peer_critique_parts.append(text_part("\n\n"))
+            peer_critique_parts.extend(
+                [
+                    text_part(f"{critique['model']}:\n"),
+                    artifact_ref(
+                        "peer critique",
+                        producer_role="critique",
+                        producer_model=critique["model"],
+                    ),
+                ]
+            )
+        defense_orchestration, defense_provenance = render_projected_prompt(
             "fight.defense",
-            user_query="[Grounded topic attached separately; inspect RAG retrieval]",
-            prior_answer="[this model's opening-position artifact attached]",
-            peer_critiques="\n\n".join(
-                f"{c['model']}:\n[peer-critique artifact attached]" for c in peer_crits
+            user_query=provenance([context_ref("Grounded topic")]),
+            prior_answer=provenance(
+                [
+                    artifact_ref(
+                        "this model's opening position",
+                        producer_role="answer",
+                        producer_model=ans["model"],
+                    )
+                ]
             ),
+            peer_critiques=provenance(peer_critique_parts),
         )
         start = time.time()
         resp = await query_model(ans["model"], [{"role": "user", "content": defense_prompt}])
@@ -889,6 +929,7 @@ async def run_mode_fight(
                 "prompt_full": defense_prompt,
                 "prompt_preview": defense_prompt[:500],
                 "orchestration_text": defense_orchestration,
+                "prompt_provenance": defense_provenance,
                 "est_tokens": max(len(defense_prompt) // 4, 1),
                 "context_tokens": context_map.get(ans["model"], context_map.get("__base__", context_tokens)),
                 "duration_ms": elapsed_ms,
@@ -906,12 +947,31 @@ async def run_mode_fight(
         critiques="\n\n".join([f"{c['model']}:\n{c['response']}" for c in critiques]),
         defenses="\n\n".join([f"{d['model']}:\n{d['response']}" for d in defenses]),
     )
-    chair_orchestration = render_prompt(
+    def artifact_block(
+        rows: List[Dict[str, Any]], role: str, label: str
+    ) -> Dict[str, Any]:
+        parts: List[Dict[str, Any]] = []
+        for index, row in enumerate(rows):
+            if index:
+                parts.append(text_part("\n"))
+            parts.extend(
+                [
+                    text_part(f"{row['model']}: "),
+                    artifact_ref(
+                        label,
+                        producer_role=role,
+                        producer_model=row["model"],
+                    ),
+                ]
+            )
+        return provenance(parts)
+
+    chair_orchestration, chair_provenance = render_projected_prompt(
         "fight.chair",
-        user_query="[Grounded topic attached separately; inspect RAG retrieval]",
-        answers="\n".join(f"{a['model']}: [opening-position artifact]" for a in answers),
-        critiques="\n".join(f"{c['model']}: [peer-critique artifact]" for c in critiques),
-        defenses="\n".join(f"{d['model']}: [defense artifact]" for d in defenses),
+        user_query=provenance([context_ref("Grounded topic")]),
+        answers=artifact_block(answers, "answer", "opening position"),
+        critiques=artifact_block(critiques, "critique", "peer critique"),
+        defenses=artifact_block(defenses, "defense", "defense"),
     )
     start = time.time()
     chair_resp = await query_model(chairman_model, [{"role": "user", "content": chair_prompt}])
@@ -931,6 +991,7 @@ async def run_mode_fight(
             "role": "chair_final",
             "prompt_full": chair_prompt,
             "orchestration_text": chair_orchestration,
+            "prompt_provenance": chair_provenance,
             "prompt_preview": chair_prompt[:500],
             "est_tokens": max(len(chair_prompt) // 4, 1),
             "context_tokens": context_map.get("__base__", context_tokens),

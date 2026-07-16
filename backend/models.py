@@ -29,6 +29,10 @@ class ModelResponse(BaseModel):
     prompt_preview: Optional[str] = Field(default=None, description="Preview of the prompt sent")
     prompt_full: Optional[str] = Field(default=None, description="Full prompt sent to model")
     orchestration_text: Optional[str] = Field(default=None, description="Curia-owned framing with grounded RAG omitted")
+    prompt_provenance: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Typed Curia-owned prompt parts with artifact references",
+    )
     est_tokens: int = Field(default=0, description="Estimated tokens in the prompt")
     context_tokens: int = Field(default=0, description="Context tokens used")
     reasoning_details: Optional[str] = Field(default=None, description="Extended reasoning (for o1-style models)")
@@ -44,6 +48,7 @@ class RankingResult(BaseModel):
     ranking: str = Field(description="Raw ranking text from the model")
     parsed_ranking: List[str] = Field(default_factory=list, description="Parsed ordered list of response labels")
     orchestration_text: Optional[str] = Field(default=None, description="Curia-owned ranking framing with grounded RAG omitted")
+    prompt_provenance: Optional[Dict[str, Any]] = None
 
     class Config:
         extra = "allow"
@@ -125,6 +130,10 @@ class Stage3Result(BaseModel):
     prompt_preview: Optional[str] = Field(default=None, description="Preview of synthesis prompt")
     prompt_full: Optional[str] = Field(default=None, description="Full synthesis prompt sent to chairman")
     orchestration_text: Optional[str] = Field(default=None, description="Curia-owned synthesis framing with grounded RAG omitted")
+    prompt_provenance: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Typed Curia-owned synthesis parts with artifact references",
+    )
     est_tokens: int = Field(default=0, description="Estimated tokens in prompt")
     context_tokens: int = Field(default=0, description="Context tokens used")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -145,6 +154,7 @@ class ModeStep(BaseModel):
     role: str
     response: str
     prompt_preview: Optional[str] = None
+    prompt_provenance: Optional[Dict[str, Any]] = None
     est_tokens: int = 0
     context_tokens: int = 0
     iteration: Optional[int] = None

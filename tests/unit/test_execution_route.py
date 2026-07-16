@@ -67,6 +67,18 @@ def test_steps_from_trace_resolves_each_council_ranking_payload():
             "status": "succeeded",
             "terminal": True,
             "predecessor_step_ids": ["answer-1", "answer-2", "ranking-1", "ranking-2"],
+            "prompt_input_artifact_ids": ["answer-1:output"],
+            "prompt_provenance": {
+                "version": 1,
+                "parts": [
+                    {
+                        "kind": "artifact_ref",
+                        "label": "answer",
+                        "producer_step_id": "answer-1",
+                        "artifact_id": "answer-1:output",
+                    }
+                ],
+            },
             "source": {"collection": "stage3", "index": 0},
         },
     ]
@@ -79,3 +91,5 @@ def test_steps_from_trace_resolves_each_council_ranking_payload():
     assert [row["kind"] for row in rows] == ["answer", "answer", "ranking", "ranking", "verdict"]
     assert [row.get("ranking") for row in rows[2:4]] == ["r0", "r1"]
     assert rows[-1]["terminal"] is True
+    assert rows[-1]["prompt_input_artifact_ids"] == ["answer-1:output"]
+    assert rows[-1]["prompt_provenance"]["parts"][0]["producer_step_id"] == "answer-1"

@@ -180,6 +180,37 @@ def _unique(values: Iterable[str]) -> List[str]:
     return list(dict.fromkeys(value for value in values if value))
 
 
+def _resolve_prompt_provenance(
+    value: Dict[str, Any],
+    nodes: Sequence[Dict[str, Any]],
+    *,
+    has_context: bool,
+) -> Dict[str, Any]:
+    """Resolve logical producer identities into canonical trace/artifact IDs."""
+    resolved_parts: List[Dict[str, Any]] = []
+    for raw_part in value.get("parts") or []:
+        part = dict(raw_part)
+        if part.get("kind") == "context_ref":
+            part["artifact_id"] = "rag-context" if has_context else "user-query"
+        elif part.get("kind") == "artifact_ref":
+            producer = part.get("producer") or {}
+            source = next(
+                (
+                    node
+                    for node in nodes
+                    if node.get("role") == producer.get("role")
+                    and node.get("model") == producer.get("model")
+                ),
+                None,
+            )
+            if source:
+                part["producer_step_id"] = source["step_id"]
+                part["artifact_id"] = source.get("output_artifact_id")
+                part["producer_status"] = source.get("status")
+        resolved_parts.append(part)
+    return {"version": int(value.get("version") or 1), "parts": resolved_parts}
+
+
 def build_execution_trace(
     *,
     mode: str,
@@ -230,6 +261,8 @@ def build_execution_trace(
             "iteration": payload.get("iteration"),
             "position": payload.get("turn"),
         }
+        if isinstance(payload.get("prompt_provenance"), dict):
+            node["_prompt_provenance"] = payload["prompt_provenance"]
         if matching:
             failure = matching[0][1]
             node["failure"] = {
@@ -300,6 +333,22 @@ def build_execution_trace(
             )
         else:
             node["output_artifact_id"] = None
+
+    for node in nodes:
+        raw_provenance = node.pop("_prompt_provenance", None)
+        if not raw_provenance:
+            continue
+        resolved = _resolve_prompt_provenance(
+            raw_provenance,
+            nodes,
+            has_context=has_context,
+        )
+        node["prompt_provenance"] = resolved
+        node["prompt_input_artifact_ids"] = _unique(
+            str(part.get("artifact_id") or "")
+            for part in resolved["parts"]
+            if part.get("kind") in {"context_ref", "artifact_ref"}
+        )
 
     arena_set = set(arena_models or [])
     arena_nodes = [node for node in nodes if not node["terminal"]]
