@@ -25,6 +25,7 @@ FACET_COLUMNS = {
     "squad_name",
 }
 LEGACY_SESSION_LIMIT = 500
+SQLITE_BIND_BATCH = 500
 
 
 @dataclass(frozen=True)
@@ -318,11 +319,15 @@ class SessionCatalog:
                 )
                 removed += 1
             if reconciled_ids:
-                placeholders = ",".join("?" for _ in reconciled_ids)
-                connection.execute(
-                    f"DELETE FROM session_write_intents WHERE conversation_id IN ({placeholders})",
-                    list(reconciled_ids),
-                )
+                reconciled_list = list(reconciled_ids)
+                for offset in range(0, len(reconciled_list), SQLITE_BIND_BATCH):
+                    batch = reconciled_list[offset : offset + SQLITE_BIND_BATCH]
+                    placeholders = ",".join("?" for _ in batch)
+                    connection.execute(
+                        "DELETE FROM session_write_intents "
+                        f"WHERE conversation_id IN ({placeholders})",
+                        batch,
+                    )
         return {"repaired": repaired, "skipped": skipped, "removed": removed}
 
     @staticmethod

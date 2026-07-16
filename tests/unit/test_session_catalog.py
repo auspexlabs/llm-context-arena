@@ -4,7 +4,11 @@ from dataclasses import replace
 
 import pytest
 
-from backend.session_catalog import InvalidSessionCursor, SessionQuery
+from backend.session_catalog import (
+    InvalidSessionCursor,
+    SessionCatalogEntry,
+    SessionQuery,
+)
 from backend.storage_service import StorageService
 
 
@@ -215,3 +219,35 @@ def test_conversation_locks_use_a_bounded_stripe_set(tmp_path):
     lock_files = list(storage._locks_dir.glob("*.lock"))
     assert len(lock_files) <= 256
     assert all(len(path.stem) == 2 for path in lock_files)
+
+
+def test_reconciliation_batches_write_intent_cleanup_past_sqlite_bind_limit(tmp_path):
+    storage = _storage(tmp_path)
+    paths = [tmp_path / f"session-{index}.json" for index in range(1001)]
+    with storage.catalog._connect() as connection:
+        connection.executemany(
+            "INSERT INTO session_write_intents "
+            "(conversation_id, operation, source_revision, source_checksum, entry_json) "
+            "VALUES (?, 'upsert', 1, '', '')",
+            [(path.stem,) for path in paths],
+        )
+
+    def project(path):
+        return SessionCatalogEntry(
+            id=path.stem,
+            created_at="2026-07-15T00:00:00Z",
+            updated_at="2026-07-15T00:00:00Z",
+            title=path.stem,
+            mode="council",
+            source_revision=1,
+            source_checksum=path.stem,
+        )
+
+    result = storage.catalog.reconcile(paths, project)
+    assert result == {"repaired": 1001, "skipped": 0, "removed": 0}
+    assert storage.list_sessions(SessionQuery(limit=1))["total"] == 1001
+    with storage.catalog._connect() as connection:
+        remaining = connection.execute(
+            "SELECT COUNT(*) FROM session_write_intents"
+        ).fetchone()[0]
+        assert remaining == 0
