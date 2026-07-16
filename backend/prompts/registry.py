@@ -176,15 +176,16 @@ Provide a clear, well-reasoned final answer that represents the arena's collecti
 _register(
     PromptEntry(
         prompt_id="round_robin.turn",
-        version="1",
+        version="2",
         mode="round_robin",
-        variables=("iteration", "passes", "turn", "model_count", "user_query", "prior_for_prompt"),
+        variables=("iteration", "passes", "turn", "model_count", "prior_for_prompt"),
         description="Per-turn refinement instruction in round robin.",
         template=(
             "Round Robin pass {iteration}/{passes}, turn {turn}/{model_count}. "
-            "You see the latest draft below. Improve accuracy and clarity; keep useful detail. "
-            "Do not ignore the prior draft when one is provided.\n\n"
-            "Original question: {user_query}\n\nLatest draft:\n{prior_for_prompt}"
+            "Audit the latest draft before revising it: do not assume it is correct, and explicitly "
+            "repair unsupported claims or unsafe advice. Preserve useful detail. The grounded original "
+            "question and repository context appear immediately above and must not be repeated here.\n\n"
+            "Latest predecessor draft:\n{prior_for_prompt}"
         ),
     )
 )
@@ -199,6 +200,50 @@ _register(
         template=(
             "Final draft from round robin:\n{prior_text}\n\nOriginal question:\n{user_query}\n\n"
             "Produce the final answer building on the latest draft; fix any errors and cite context if present."
+        ),
+    )
+)
+
+_register(
+    PromptEntry(
+        prompt_id="fight.critique",
+        version="1",
+        mode="fight",
+        variables=("user_query", "peer_positions"),
+        description="Adversarial critique of the other opening positions.",
+        template=(
+            "Provided are positions on a specific topic. Argue against them directly and critique "
+            "the reasoning—call out gaps, weak claims, and missing evidence.\n\n"
+            "Topic:\n{user_query}\n\nPeer positions:\n{peer_positions}"
+        ),
+    )
+)
+
+_register(
+    PromptEntry(
+        prompt_id="fight.defense",
+        version="1",
+        mode="fight",
+        variables=("user_query", "prior_answer", "peer_critiques"),
+        description="Defense and revision after peer critiques.",
+        template=(
+            "Here are critiques of your previous message; defend your position. Address the critiques "
+            "directly and update your stance if needed.\n\nOriginal topic:\n{user_query}\n\n"
+            "Your prior answer:\n{prior_answer}\n\nPeer critiques:\n{peer_critiques}"
+        ),
+    )
+)
+
+_register(
+    PromptEntry(
+        prompt_id="fight.chair",
+        version="1",
+        mode="fight",
+        variables=("user_query", "answers", "critiques", "defenses"),
+        description="Chair synthesis over the complete adversarial exchange.",
+        template=(
+            "Debate on: {user_query}\n\nAnswers:\n{answers}\n\nCritiques:\n{critiques}\n\n"
+            "Defenses:\n{defenses}\n\nSummarize consensus, disagreements, and provide the best combined answer."
         ),
     )
 )

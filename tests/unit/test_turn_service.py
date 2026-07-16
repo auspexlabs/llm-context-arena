@@ -212,8 +212,11 @@ class TestTurnService:
             "calls": 3,
         }
         assert turn.metadata["execution_quality"]["acceptable"] is True
+        assert turn.metadata["execution_trace"]["version"] == 1
+        assert turn.metadata["execution_trace"]["summary"]["participant_succeeded"] == 1
         conv = storage.get_conversation("conv-1")
         assert conv["messages"][-1]["role"] == "assistant"
+        assert conv["messages"][-1]["metadata"]["execution_trace"]["version"] == 1
 
     @pytest.mark.asyncio
     async def test_stepwise_failures_are_persisted_and_mark_quality_degraded(
@@ -285,3 +288,5 @@ class TestTurnService:
         stored = storage.get_conversation("conv-1")["messages"][-1]
         assert len(stored["metadata"]["model_failures"]) == 4
         assert stored["metadata"]["execution_quality"]["acceptable"] is False
+        assert stored["metadata"]["execution_trace"]["summary"]["participant_succeeded"] == 2
+        assert stored["metadata"]["execution_trace"]["summary"]["participant_failed"] == 2

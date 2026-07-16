@@ -1,19 +1,16 @@
 import { escapeHtml } from '../escape';
-import { renderArenaAdditions, renderContextTrace } from '../content-trace';
+import { renderArenaAdditions } from '../content-trace';
 import { langFromPath } from '../highlight-code';
+import { renderInjectionWorkflow } from '../injection-workflow';
 import { renderRichContent } from '../markdown';
 import { preventFocusScroll, setScrollAnchor } from '../scroll-anchor';
-import { setDeckView } from '../store';
-import {
-  activePromptForModel,
-  chunkKey,
-  type TurnContextSnapshot,
-} from '../turn-context';
+import { focusTraceStep, setContextAdditiveExpanded, setDeckView } from '../store';
+import { chunkKey, type TurnContextSnapshot } from '../turn-context';
 import {
   collapseAllRag,
   expandAllRag,
   getState,
-  setContextPromptModel,
+  setContextInjectionSelection,
   toggleRagChunk,
   toggleRagList,
 } from '../store';
@@ -25,10 +22,7 @@ export function renderContextViewport(
   msg: AssistantMessage | null = null
 ) {
   const s = getState();
-  const modelIdx = s.contextPromptModel;
-  const prompt = activePromptForModel(ctx, modelIdx, false);
   const keys = ctx.ragChunks.map((c, i) => chunkKey(c, i));
-  const entry = ctx.modelPrompts[modelIdx < 0 ? 0 : modelIdx];
 
   const toolbar =
     ctx.ragChunks.length > 0
@@ -39,27 +33,11 @@ export function renderContextViewport(
         </div>`
       : '';
 
-  const modelTabs =
-    ctx.modelPrompts.length > 1
-      ? `<div class="ctx-model-tabs">
-          <button type="button" class="ctx-model-tab${modelIdx < 0 ? ' on' : ''}" data-prompt-model="-1">Shared</button>
-          ${ctx.modelPrompts
-            .map((m, i) => {
-              const short = m.model.split('/').pop() || m.model;
-              const on = modelIdx === i ? ' on' : '';
-              return `<button type="button" class="ctx-model-tab${on}" data-prompt-model="${i}">${escapeHtml(short)}</button>`;
-            })
-            .join('')}
-        </div>`
-      : '';
-
-  const promptBlock = prompt.text
+  const promptBlock = ctx.modelPrompts.length
     ? `<section class="ctx-panel ctx-panel-prompt" id="ctx-injected">
         <h3 class="ctx-heading">Injected context</h3>
-        <p class="ctx-sub">${escapeHtml(prompt.label)} · stage 1 message body (query + RAG)${ctx.contextTokens != null ? ` · ~${ctx.contextTokens.toLocaleString()} ctx tok` : ''}</p>
-        ${modelTabs}
-        <div class="ctx-trace-body" data-prompt-body>${renderContextTrace(prompt.text)}</div>
-        ${entry?.promptFull ? `<button type="button" class="ctx-link" data-toggle-full>Toggle full prompt</button>` : ''}
+        <p class="ctx-sub">Where retrieval happened, who received the grounded turn, and what Curia inserted between model calls. RAG content stays in RAG Retrieval.</p>
+        ${renderInjectionWorkflow(ctx, s.contextInjectionSelection)}
       </section>`
     : '';
 
@@ -81,7 +59,7 @@ export function renderContextViewport(
     : '';
 
   const ragSection = ctx.ragChunks.length
-    ? `<section class="ctx-panel ctx-panel-rag">
+    ? `<section class="ctx-panel ctx-panel-rag" id="ctx-rag">
         <h3 class="ctx-heading">RAG retrieval</h3>
         <p class="ctx-sub">${ctx.ragChunks.length} chunks · same content as injected context, per-chunk view</p>
         <button type="button" class="rag-toggle" data-rag-list-toggle>
@@ -99,17 +77,46 @@ export function renderContextViewport(
       <p class="ctx-sub">What you typed — without injection</p>
       <pre class="ctx-pre">${escapeHtml(ctx.userQuery || '—')}</pre>
     </section>
-    ${msg ? renderArenaAdditions(msg, ctx) : ''}
     ${promptBlock}
+    ${msg ? renderArenaAdditions(msg, ctx, s.contextAdditivesExpanded) : ''}
     ${ragSection}
   `;
 
-  let showFull = false;
-  container.querySelector('[data-toggle-full]')?.addEventListener('click', () => {
-    showFull = !showFull;
-    const p = activePromptForModel(ctx, modelIdx, showFull);
-    const body = container.querySelector('[data-prompt-body]');
-    if (body && p.text) body.innerHTML = renderContextTrace(p.text);
+  container.querySelectorAll('[data-injection-node]').forEach((node) => {
+    const open = () => setContextInjectionSelection((node as SVGGElement).dataset.injectionNode || null);
+    node.addEventListener('click', open);
+    node.addEventListener('keydown', (event) => {
+      const key = (event as KeyboardEvent).key;
+      if (key === 'Enter' || key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    });
+  });
+  container.querySelectorAll('[data-injection-close]').forEach((node) => {
+    node.addEventListener('click', (event) => {
+      if (event.target === node || (node as HTMLElement).matches('button')) {
+        setContextInjectionSelection(null);
+      }
+    });
+  });
+  container.querySelectorAll<HTMLDetailsElement>('details[data-additive-key]').forEach((details) => {
+    details.addEventListener('toggle', () => {
+      const key = details.dataset.additiveKey;
+      if (key) setContextAdditiveExpanded(key, details.open);
+    });
+  });
+  container.querySelectorAll('[data-injection-goto-rag]').forEach((node) => {
+    node.addEventListener('click', () => {
+      setContextInjectionSelection(null);
+      container.querySelector('#ctx-rag')?.scrollIntoView({ block: 'start' });
+    });
+  });
+  container.querySelectorAll('[data-injection-goto-step]').forEach((node) => {
+    node.addEventListener('click', () => {
+      const stepId = (node as HTMLElement).dataset.injectionGotoStep;
+      if (stepId) focusTraceStep(stepId);
+    });
   });
 
   container.querySelector('[data-goto-user]')?.addEventListener('click', () => {
@@ -134,12 +141,6 @@ export function renderContextViewport(
       const key = chunkKey(ctx.ragChunks[i], i);
       setScrollAnchor(key);
       toggleRagChunk(key);
-    });
-  });
-  container.querySelectorAll('[data-prompt-model]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setContextPromptModel(Number((btn as HTMLElement).dataset.promptModel));
     });
   });
 }

@@ -17,6 +17,9 @@ export interface ConversationSummary {
   created_at?: string;
   total_cost_usd?: number;
   total_tokens?: number;
+  arena_models?: string[];
+  chairman_model?: string | null;
+  squad_fingerprint?: string;
 }
 
 export interface SessionSummary extends ConversationSummary {
@@ -74,12 +77,36 @@ export interface ModelResponse {
   model: string;
   response?: string;
   role?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+  duration_ms?: number;
+  prompt_preview?: string;
+  prompt_full?: string;
+  orchestration_text?: string;
+  prompt_provenance?: PromptProvenance;
+  context_tokens?: number;
+  est_tokens?: number;
+  ranking?: string;
+  iteration?: number;
+  turn?: number;
+  had_prior_draft?: boolean;
+  prior_draft?: string | null;
 }
 
 export interface RankingEntry {
   model: string;
   ranking?: string;
   parsed_ranking?: string[] | null;
+  role?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+  duration_ms?: number;
+  orchestration_text?: string;
+  prompt_provenance?: PromptProvenance;
 }
 
 export interface AssistantMessage {
@@ -90,6 +117,83 @@ export interface AssistantMessage {
   metadata?: Record<string, unknown> | null;
   contextSources?: unknown[] | null;
   loading?: { stage1?: boolean; stage2?: boolean; stage3?: boolean };
+}
+
+export type TraceStepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+
+export interface TraceStepSource {
+  collection: 'stage1' | 'stage2' | 'stage3' | 'metadata.steps';
+  index: number;
+}
+
+export interface TraceFailure {
+  status?: number;
+  message?: string;
+  provider?: string;
+  failure_kind?: string;
+}
+
+export interface PromptProvenancePart {
+  kind: 'text' | 'context_ref' | 'artifact_ref';
+  text?: string;
+  label?: string;
+  target?: 'rag' | 'answers' | string;
+  artifact_id?: string | null;
+  producer?: { role?: string; model?: string };
+  producer_step_id?: string;
+  producer_status?: TraceStepStatus;
+}
+
+export interface PromptProvenance {
+  version: number;
+  parts: PromptProvenancePart[];
+}
+
+export interface TraceStep {
+  step_id: string;
+  ordinal: number;
+  kind: string;
+  role: string;
+  model: string;
+  status: TraceStepStatus;
+  terminal: boolean;
+  source: TraceStepSource | null;
+  iteration?: number | null;
+  position?: number | null;
+  predecessor_step_ids: string[];
+  input_artifact_ids: string[];
+  output_artifact_id?: string | null;
+  prompt_input_artifact_ids?: string[];
+  prompt_provenance?: PromptProvenance;
+  failure?: TraceFailure;
+}
+
+export interface TraceSummary {
+  planned_steps: number;
+  attempted_steps: number;
+  succeeded_steps: number;
+  failed_steps: number;
+  arena_steps: number;
+  arena_succeeded_steps: number;
+  arena_failed_steps: number;
+  participant_expected: number;
+  participant_succeeded: number;
+  participant_failed: number;
+  drafts_expected: number;
+  drafts_succeeded: number;
+  successful_refinements: number;
+  handoff_deliveries: number;
+  final_status: string;
+}
+
+export interface ExecutionTrace {
+  version: number;
+  mode: string;
+  steps: TraceStep[];
+  artifacts: Array<Record<string, unknown>>;
+  edges: Array<{ from_step_id: string; to_step_id: string; artifact_id: string }>;
+  summary: TraceSummary;
+  legacy?: boolean;
 }
 
 export interface UserMessage {
@@ -175,6 +279,12 @@ export interface DeckState {
   ragChunksExpanded: string[];
   /** Stage-1 model index whose prompt is shown in Context view (-1 = shared/first). */
   contextPromptModel: number;
+  /** Injection-workflow node whose exact persisted payload is open in the modal. */
+  contextInjectionSelection: string | null;
+  /** Canonical trace step selected through an artifact-reference link. */
+  focusedTraceStepId: string | null;
+  /** Arena-addition disclosures the user has opened for the selected turn. */
+  contextAdditivesExpanded: string[];
   failuresExpanded: string[];
   takeControl: boolean;
   isRunning: boolean;

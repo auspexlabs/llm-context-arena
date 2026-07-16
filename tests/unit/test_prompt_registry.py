@@ -49,6 +49,18 @@ class TestPromptRegistry:
         assert "single model" in text
         assert "Explain asyncio" in text
 
+    def test_render_round_robin_turn_requires_only_embedded_variables(self):
+        text = render_prompt(
+            "round_robin.turn",
+            iteration=1,
+            passes=2,
+            turn=1,
+            model_count=3,
+            prior_for_prompt="A predecessor draft",
+        )
+        assert "pass 1/2" in text
+        assert "A predecessor draft" in text
+
     def test_render_mode_filter(self):
         council_only = list_prompts(mode="council")
         ids = {p["prompt_id"] for p in council_only}

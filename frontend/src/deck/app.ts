@@ -34,13 +34,23 @@ import { parseDeckLocation, pushDeckLocation, replaceDeckLocation } from './sess
 import { renderSessionsPage } from './sessions-view';
 import './deck.css';
 
-const TIMELINE: { id: DeckView; label: string }[] = [
+const COUNCIL_TIMELINE: { id: DeckView; label: string }[] = [
   { id: 'context', label: 'Context' },
   { id: 'answers', label: '1 Answers' },
   { id: 'rankings', label: '2 Rankings' },
   { id: 'verdict', label: '3 Verdict' },
   { id: 'quality', label: 'Quality' },
 ];
+
+function timelineFor(mode: string): { id: DeckView; label: string }[] {
+  if (mode === 'council' || mode === 'baseline') return COUNCIL_TIMELINE;
+  return [
+    { id: 'context', label: 'Context' },
+    { id: 'answers', label: mode === 'round_robin' ? 'Sequence' : 'Steps' },
+    { id: 'verdict', label: 'Verdict' },
+    { id: 'quality', label: 'Quality' },
+  ];
+}
 
 let abortCtrl: AbortController | null = null;
 let els: Record<string, HTMLElement> = {};
@@ -211,12 +221,18 @@ function render() {
 }
 
 function renderPreservingScroll() {
+  const inspectorScroll = Object.fromEntries(
+    [...els.inspector.querySelectorAll<HTMLElement>('[data-rail-scroll]')].map((element) => [
+      element.dataset.railScroll || '',
+      element.scrollTop,
+    ])
+  );
   const scroll = {
     viewport: (els.deck.querySelector('#viewport') as HTMLElement | null)?.scrollTop ?? 0,
     sessions: (els.deck.querySelector('.sessions-table-scroll') as HTMLElement | null)?.scrollTop ?? 0,
     railTurns: (els.rail.querySelector('.rail-turns') as HTMLElement | null)?.scrollTop ?? 0,
     railSessions: (els.rail.querySelector('.rail-sessions') as HTMLElement | null)?.scrollTop ?? 0,
-    inspector: (els.inspector.querySelector('.insp-body.on') as HTMLElement | null)?.scrollTop ?? 0,
+    inspector: inspectorScroll,
     verdict: els.verdict.scrollTop,
   };
   render();
@@ -224,12 +240,13 @@ function renderPreservingScroll() {
   const sessions = els.deck.querySelector('.sessions-table-scroll') as HTMLElement | null;
   const railTurns = els.rail.querySelector('.rail-turns') as HTMLElement | null;
   const railSessions = els.rail.querySelector('.rail-sessions') as HTMLElement | null;
-  const inspector = els.inspector.querySelector('.insp-body.on') as HTMLElement | null;
   if (viewport) viewport.scrollTop = scroll.viewport;
   if (sessions) sessions.scrollTop = scroll.sessions;
   if (railTurns) railTurns.scrollTop = scroll.railTurns;
   if (railSessions) railSessions.scrollTop = scroll.railSessions;
-  if (inspector) inspector.scrollTop = scroll.inspector;
+  els.inspector.querySelectorAll<HTMLElement>('[data-rail-scroll]').forEach((element) => {
+    element.scrollTop = scroll.inspector[element.dataset.railScroll || ''] || 0;
+  });
   els.verdict.scrollTop = scroll.verdict;
 }
 
@@ -383,8 +400,9 @@ function renderDeck() {
   const now = s.runtimeTick || Date.now();
   const runtimeForTurn =
     s.turnRuntime?.turnIndex === s.selectedTurnIndex ? s.turnRuntime : null;
+  const timeline = timelineFor(String(msg?.metadata?.mode || s.conversation?.mode || 'council'));
 
-  const stepsHtml = TIMELINE.map(({ id, label }) => {
+  const stepsHtml = timeline.map(({ id, label }) => {
     let cls = 'step-btn';
     if (s.deckView === id) cls += ' on';
     if (id === 'context' && turnCtx.contextChunkCount > 0) cls += ' done';
