@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 AgentId = Annotated[str | None, Header(alias="X-Agent-Id")]
 RequestOrigin = Annotated[str | None, Header(alias="X-Curia-Origin")]
+
+
 class ConversationCreate(BaseModel):
     mode: str = "council"
 
@@ -83,7 +85,7 @@ async def _progress_stream(
     while not task.done() or not queue.empty():
         try:
             event = await asyncio.wait_for(queue.get(), timeout=0.05)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             continue
         yield f"data: {json.dumps(event)}\n\n"
 

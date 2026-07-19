@@ -29,4 +29,6 @@ npm run dev -- --host "$WEB_HOST" &
 CURIA_PIDS+=("$!")
 
 echo "Press Ctrl+C to stop Curia."
-wait -n "${CURIA_PIDS[@]}"
+# Bash 3.2 (the macOS system version) has no `wait -n`. The API is the primary
+# process; if it exits, the EXIT trap stops the Observatory as well.
+wait "${CURIA_PIDS[0]}"
