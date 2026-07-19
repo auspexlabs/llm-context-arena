@@ -1,165 +1,174 @@
-# Curia — agent handoff (2026-07-13)
+# Curia — rolling agent handoff (2026-07-19)
 
-**For the next session:** open workspace `/home/phaze/PycharmProjects/curia`, start a **new Composer/Agent chat**, and paste:
+Read this file before resuming go-live preparation in `/home/phaze/PycharmProjects/curia`.
 
-> Read `docs/curia-handoff.md` and execute **First actions** below.
+## Current checkpoint
 
----
+| Item | State |
+|------|-------|
+| **Main** | `53489c0` — PR #15 merged; current source tree is Apache-2.0 |
+| **Active branch** | `docs/readme-accuracy` |
+| **Open PR** | [#16 — refresh README for current Curia](https://github.com/Auspex-Aerie/curia/pull/16), ready for CI and Greptile review |
+| **README commit** | `0671967` — pushed to `origin/docs/readme-accuracy` |
+| **This handoff** | Updated after PR #16 was opened and included on the same branch |
+| **Working tree caution** | Preserve the untracked artifacts listed below |
 
-## First actions (do these before dogfood)
+PR #16 is a documentation-only go-live cleanup. It removes stale roadmap and licensing prose, corrects all mode/squad/configuration descriptions, documents the current Observatory and Sessions catalog, and narrows the directive table to behavior users can rely on.
+
+### Resume actions
 
 ```bash
 cd /home/phaze/PycharmProjects/curia
-git checkout main && git pull origin main
-git status
+git fetch origin
+git switch docs/readme-accuracy
+git status -sb
+gh pr view 16 --repo Auspex-Aerie/curia
 ```
 
-**If handoff changes are uncommitted** (likely — shell died mid-commit during dir rename):
+If PR #16 is still open, review its checks and Greptile findings on this branch. If it has merged, fast-forward local `main` before beginning new work:
 
 ```bash
-git add docs/curia-handoff.md docs/piv-003-curia-rebrand.md \
-  docs/hyp001_results_learned.json docs/hyp002_results.json README.md
-git commit -m "docs: handoff and local path ~/PycharmProjects/curia"
-git push origin main
+git switch main
+git merge --ff-only origin/main
 ```
 
-**Verify stack:**
+## Verification at this checkpoint
 
-```bash
-uv run pytest tests/unit -q -m "not eval"   # same as CI — expect ~241 passed
-cd frontend && npm run build && cd ..
-./start.sh                                 # API :8001, deck :5173
-```
+- `uv run pytest tests/unit/test_directives.py tests/unit/test_frozen_config.py -q` — **32 passed**
+- `cd frontend && npm run build` — **passed**
+- `git diff --check` — **passed**
+- README stale-term scan — **clean** for Bicameral Mind, speculative commercial-offering language, phantom `@file:` support, unwired directives, and removed UI controls
+- Greptile first pass — one P1 corrected by making mode-agnostic `send_message` the documented full-turn path and identifying `run_council_turn` as a Council-only convenience wrapper
 
-**Update Cursor MCP** `cwd` if still pointing at `llm-council-rag`:
-
-```json
-"curia": {
-  "command": "uv",
-  "args": ["run", "curia-mcp"],
-  "cwd": "/home/phaze/PycharmProjects/curia",
-  "env": {
-    "CURIA_API_URL": "http://127.0.0.1:8001",
-    "CURIA_AGENT_ID": "cursor"
-  }
-}
-```
-
-Optional symlink so old Grok sessions resolve:
-
-```bash
-ln -sf /home/phaze/PycharmProjects/curia /home/phaze/PycharmProjects/llm-council-rag
-```
-
----
+The focused test run emits existing Pydantic v2 class-config and `langchain-community` deprecation warnings; no test failed.
 
 ## Where things live
 
 | Item | Value |
-|------|--------|
-| **Product** | **Curia** — multi-model deliberation + code RAG |
-| **GitHub** | [github.com/Auspex-Aerie/curia](https://github.com/Auspex-Aerie/curia) |
-| **Local path** | `/home/phaze/PycharmProjects/curia` (renamed from `llm-council-rag` in place) |
-| **License** | Apache-2.0 — open source; retain applicable license and `NOTICE` attribution; product-name rights are not granted beyond customary attribution |
-| **Ledger** | [`docs/decision_log.md`](decision_log.md) |
+|------|-------|
+| **Product** | Curia — multi-model deliberation grounded in code |
+| **GitHub** | [Auspex-Aerie/curia](https://github.com/Auspex-Aerie/curia) |
+| **Local path** | `/home/phaze/PycharmProjects/curia` |
+| **License** | Apache-2.0 from the source-tree boundary recorded in `LICENSING.md` and DEC-029 |
+| **Decision ledger** | [`docs/decision_log.md`](decision_log.md) |
+| **Backend / UI** | FastAPI `:8001` / Observatory `:5173` via `./start.sh` |
+| **MCP** | `uv run curia-mcp`; 30 tools over the local HTTP API |
 
----
+Curia currently has no application-level authentication. Bind it to localhost or place it behind a trusted network boundary.
 
-## What landed on `main` (this arc)
+## What landed in the current arc
 
-### PR #11 — Observatory deck (merged)
+### PR #13 — Sessions catalog (merged `08af98a`)
 
-- Vanilla TS cutover: `frontend/src/deck/` (rail · deck · inspector · verdict)
-- Live poll for MCP/external turns, per-step runtime timers
-- Context trace (CodeRAG-first), quality panel, chairman failure → `severity: failed`
-- Greptile fixes: metadata merge, DOMPurify, escapeHtml, SSE buffer, poll overlap guard, rankings XSS
+- Moved Sessions to a dedicated, full-width Observatory page.
+- Added a reconciled SQLite query projection while keeping conversation JSON canonical.
+- Added server-side facets/sorting, browser filtering of loaded rows, lazy pagination, cost and outcome metadata, and shareable session links.
+- Recorded DEC-027.
 
-### PR #12 — OSS + Curia rebrand (merged `344a506`)
+### PR #14 — prompt artifact provenance (merged `699dbe9`)
 
-- Org: `auspexlabs/llm-context-arena` → **`Auspex-Aerie/curia`**
-- Initial PolyForm Shield license (later superseded by Apache-2.0 in `DEC-029`), README refresh, GitHub Actions CI
-- Rebrand tiers A–C: `curia` package, `curia-mcp`, `CURIA_*` env (`ARENA_*` aliases)
-- CI: `uv sync --extra dev`, `pytest tests/unit -m "not eval"`, frontend build
-- Ledger: **PIV-003**, **DEC-020**, **DEF-011** ([`piv-003-curia-rebrand.md`](piv-003-curia-rebrand.md))
+- Added typed prompt provenance distinct from execution topology.
+- Made injected orchestration a clickable workflow, with artifact references back to producing answers and a link to RAG evidence rather than duplicated RAG text.
+- Added Council rank bubbles and a dedicated aggregate-ranking view.
+- Preserved mode-specific Round Robin and Fight handoffs in the canonical trace.
+- Recorded DEC-028 and the related mode incidents/decisions.
 
-### After PR #12 (local only, may be uncommitted)
+### PR #15 — Apache-2.0 source boundary (merged `53489c0`)
 
-- Directory renamed: `~/PycharmProjects/llm-council-rag` → **`~/PycharmProjects/curia`**
-- `data/config.json` `repo_root` updated (gitignored)
-- This handoff doc expanded
+- Replaced the remaining inherited implementation/media in the current tree with independently written Curia code.
+- Added the standard Apache-2.0 `LICENSE`, Auspex Labs `NOTICE`, and `LICENSING.md` history boundary.
+- Updated package metadata and CI license detection; Greptile's portability findings were fixed before merge.
+- Recorded DEC-029.
 
----
+### PR #16 — README accuracy (open)
+
+- Rewrote the public entry point around current product behavior.
+- Removed Bicameral Mind and speculative future-commercial-offering language.
+- Corrected the six orchestration topologies, Cheap Pros chair, frozen model limits, MCP lifecycle, and reliable directives.
+- Replaced stale UI claims with the current Turns/Sessions/Inspector/provenance/cost/quality surfaces.
+- Added the local/trusted-network boundary and current validation commands.
+
+Earlier foundations remain in PR #11 (Observatory cutover) and PR #12 (Curia rebrand and CI).
 
 ## Architecture snapshot
 
-| Surface | Entry | Notes |
-|---------|-------|-------|
-| **Observatory UI** | `./start.sh` → :5173 | Watch-first; Take control for UI-driven turns |
-| **HTTP API** | `:8001` | FastAPI; no auth (local/trusted only) |
-| **MCP agents** | `uv run curia-mcp` | ~30 tools; thin client over API |
-| **Quality gate** | `execution_quality.acceptable` | Agents must check before trusting stage 3 |
+| Surface | Current contract |
+|---------|------------------|
+| **Turns** | Distinct turns with mode-specific execution views, context/provenance, quality, rankings where applicable, and verdict |
+| **Sessions** | Full-width searchable catalog backed by a rebuildable SQLite projection; JSON remains canonical |
+| **Inspector** | Participants, mode-aware deliberation pulse, and cost series/breakdowns |
+| **Execution** | Canonical trace is the source of topology, step counts, runtime, failures, usage, and cost |
+| **Prompt provenance** | Separate typed contract for Curia-owned instructions and artifact handoffs; RAG content stays in the RAG view |
+| **MCP** | `send_message` runs a full turn in every mode; `run_council_turn` and stepwise `create_turn` / `advance_turn` are Council-specific |
+| **Quality gate** | Check `execution_quality.acceptable`; HTTP 200 alone is not evidence of a valid deliberation |
+| **Configuration** | Squad JSON plus frozen `data/model_catalog.yaml` and `data/arena_config.yaml` |
 
-**Agent flow:** `get_index_manifest` → reindex if stale → `create_conversation` → `run_council_turn` or `create_turn` + `advance_turn` × 3. Deck live-polls external runs.
+Current squads:
 
-**Docs:** [`agent-control-plane-architecture.md`](agent-control-plane-architecture.md), [`piv-001-checklist.md`](piv-001-checklist.md)
+- `normal`: five free arena models, `google/gemini-2.5-pro` chair
+- `freebee9`: nine free arena models, `google/gemini-2.5-pro` chair
+- `cheap_pros`: four low-cost paid arena models, `deepseek/deepseek-v4-flash` chair
 
----
+Current modes: Council, Round Robin, Fight, Stacks, Complex Iterative, and Complex Questioning.
 
-## Next goal: MCP dogfood
+## Next work
 
-User wants to **drive real work via MCP** with deck open as observer.
+1. Let CI and Greptile review PR #16. Poll at two-minute intervals when actively shepherding the PR; address actionable P-severity findings on `docs/readme-accuracy` until clean.
+2. Merge PR #16, then fast-forward `main` before starting another branch.
+3. Resume go-live cleanup from the decision ledger rather than the retired `PLAN.md` roadmap.
+4. Treat RAG behavior as its own focused task. In particular, preserve the user's policy that retrieved RAG tokens must never trigger/request model summarization; audit the existing budget/summarizer path before changing or advertising it.
+5. Revisit explicit-path retrieval and ranking behavior only within that focused RAG task (INC-002 / DEC-021 context).
 
-Suggested first tasks:
+## Known gaps and follow-ups
 
-1. Index `curia` repo itself → council question about `mcp_arena/` or observatory deck
-2. Verify deck shows MCP-started turn (live poll, quality panel, verdict)
-3. Note friction → GitHub issue or `DEC`/`DEF` in decision log
+| Item | Reference / note |
+|------|------------------|
+| Advanced-mode visual vocabulary remains less specialized for Stacks and both Complex modes | DIS-003 |
+| Complex Iterative uses only the first two arena models but participant expectations have counted the full squad | INC-006 |
+| Client abort does not cancel an already-running backend turn | PIV-001 checklist |
+| `prepare_context` is not a standalone MCP tool | PIV-001 checklist |
+| Deep internal rename (`mcp_arena/`, `backend/arena.py`, `arena_config.yaml`) remains deferred | DEF-011 |
+| Parsed `@temp`, `@maxtokens`, `@trace`, and safety fields are not wired through model execution | Do not advertise as functional directives |
+| Free OpenRouter squads can encounter provider rate limits | Prefer `cheap_pros` for reliable dogfood runs; inspect model failures and quality |
+| The API has no application authentication | Local/trusted-network deployment only |
 
-CLI template (non-Cursor): `scripts/dogfood_bayence.py`
+## Working-tree boundaries
 
-**Do not commit** unless asked: `.playwright-mcp/`, `observatory-deck-*.png`, `scripts/quiz_contract_rankings.py`
+These user-owned artifacts are intentionally untracked. Do not stage or delete them unless explicitly asked:
 
----
+- `.playwright-mcp/`
+- `observatory-deck-complete.png`
+- `observatory-deck-mock.png`
+- `scripts/quiz_contract_rankings.py`
 
-## Known gaps (not blocking dogfood)
+Local runtime configuration is gitignored:
 
-| Item | Ref |
-|------|-----|
-| `await_user` / resume, watch SSE | PIV-002b |
-| Agent attribution in deck (`CURIA_AGENT_ID`) | piv-001-checklist |
-| Client abort → cancel backend run | piv-001-checklist |
-| `prepare_context` standalone MCP tool | piv-001-checklist |
-| Deep rename (`mcp_arena/`, `arena_config.yaml`) | DEF-011 |
-| Free-squad 429s (Venice etc.) | operational — quality panel handles |
+- `.env` — requires `OPENROUTER_API_KEY`
+- `data/config.json` — persisted squad/theme settings and local `repo_root`
 
----
+## GitHub and review policy
 
-## CI / test notes
+- Use one branch and one PR per phase.
+- Review fixes belong on the PR head branch; do not hide them on a side branch.
+- Allow Greptile a few minutes to review. During active shepherding, poll every two minutes up to ten times per turn.
+- Fix actionable P-severity findings until none remain. Ask the user only when feedback requires a product-direction choice or material scope expansion.
+- The Karpathy `upstream` remote was removed on 2026-07-19. `origin` is the only configured remote and points to `Auspex-Aerie/curia`; still pass `--repo Auspex-Aerie/curia` to scripted `gh` calls when practical.
 
-- Full unit suite locally may fail `test_hyp001` (recall thresholds) — **excluded in CI** via `@pytest.mark.eval`
-- Pre-push command: `uv run pytest tests/unit -m "not eval"`
+## Standard checks
 
----
-
-## Policy (from user)
-
-When multiple branches/PRs are active: **Greptile/review fixes land on the PR’s head branch**, not a side branch. Merge feature work into the pivot branch before expecting review bots to see fixes.
-
----
-
-## Prior session (orphaned)
-
-Long Composer thread broke shell after directory rename (workspace path mismatch). Session ID for Grok resume:
-
+```bash
+uv run pytest tests/unit -m "not eval"
+cd frontend && npm run build
 ```
+
+Evaluation-marked RAG tests load ML models and are intentionally excluded from ordinary CI.
+
+## Historical recovery note
+
+The original Grok/Composer thread was orphaned after the workspace rename. Its session ID was:
+
+```text
 019f33ba-78f3-75c0-ac2d-0f1517bd801a
 ```
 
-Resume: `grok --resume 019f33ba-78f3-75c0-ac2d-0f1517bd801a` (or new agent + this file).
-
----
-
-## Local runtime config (gitignored)
-
-- `.env` — `OPENROUTER_API_KEY` required
-- `data/config.json` — squad often `freebee9`; `repo_root` should be `/home/phaze/PycharmProjects/curia`
+This handoff and the decision ledger now supersede that session as the source for resuming work.
