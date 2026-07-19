@@ -8,7 +8,7 @@ Read this file before resuming go-live preparation in `/home/phaze/PycharmProjec
 |------|-------|
 | **Main** | `53489c0` — PR #15 merged; current source tree is Apache-2.0 |
 | **Active branch** | `docs/readme-accuracy` |
-| **Open PR** | [#16 — refresh README for current Curia](https://github.com/Auspex-Aerie/curia/pull/16), draft |
+| **Open PR** | [#16 — refresh README for current Curia](https://github.com/Auspex-Aerie/curia/pull/16), ready for CI and Greptile review |
 | **README commit** | `0671967` — pushed to `origin/docs/readme-accuracy` |
 | **This handoff** | Updated after PR #16 was opened and included on the same branch |
 | **Working tree caution** | Preserve the untracked artifacts listed below |
