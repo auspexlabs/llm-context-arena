@@ -10,8 +10,11 @@
 - Env vars: `CURIA_API_URL`, `CURIA_AGENT_ID`, `CURIA_MCP_*` preferred; `ARENA_*` client/MCP aliases retained for one release cycle
 
 ### Added
-- PolyForm Shield 1.0.0 license (see `LICENSE`)
+- Apache License 2.0 with an Auspex Labs attribution `NOTICE`
 - GitHub Actions CI (unit tests + frontend build)
+
+### Changed
+- Replaced the remaining inherited implementation in the current source tree and established Apache-2.0 as the license from this transition forward. Historical revisions retain their historical terms; applicable attribution remains required, and future separately developed offerings cannot alter already-released terms.
 
 ## v0.2.0 - LLM Context Arena rebrand + multi-mode orchestration
 

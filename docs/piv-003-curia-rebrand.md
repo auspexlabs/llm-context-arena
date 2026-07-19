@@ -9,7 +9,7 @@
 
 Rename the product from **LLM Context Arena** to **Curia** (*the chamber where deliberation happens*) — aligned with Auspex-Aerie Latin naming (`tessera`, `auspice`, `signet`). Repository: [`Auspex-Aerie/curia`](https://github.com/Auspex-Aerie/curia).
 
-Open-core posture unchanged: PolyForm Shield (free to use; no competing commercial fork; **Curia Pro** reserved).
+Curia is open source under Apache-2.0. Commercial use and forks are permitted with the license's notice, attribution, and modified-file requirements. The license grants no rights to Auspex Labs trade or product names beyond customary attribution. Any future commercial offering would be developed separately and would not change the terms of versions already released. This supersedes the original PolyForm Shield posture through `DEC-029`.
 
 ---
 
@@ -27,7 +27,7 @@ Open-core posture unchanged: PolyForm Shield (free to use; no competing commerci
 
 - [x] `pyproject.toml` → `name = "curia"`
 - [x] `curia-mcp` script; `arena-mcp` deprecated alias
-- [x] `frontend/package.json` → `name = "curia"`
+- [x] `frontend/package.json` → `name = "curia-observatory"`
 - [x] `scripts/arena_cli.py` → `prog = "curia"`
 - [x] `uv.lock` regenerated
 
@@ -52,9 +52,10 @@ Implementation: `mcp_arena/env.py` (`env_prefixed`).
 - [ ] Widespread `ARENA_MODELS` / `run_full_arena` symbol rename
 - [ ] `data/arena_config.yaml` → `curia_config.yaml`
 
-### Tier E — docs / module docstrings (deferred)
+### Tier E — docs / module docstrings (in progress)
 
-- [ ] `CLAUDE.md`, `RAG_LMSTUDIO.md`, PIV-001 intro lines
+- [x] `CLAUDE.md`, `RAG_LMSTUDIO.md`
+- [ ] PIV-001 historical intro lines
 - [ ] Backend module one-line docstrings
 
 ### Tier F — external (manual)

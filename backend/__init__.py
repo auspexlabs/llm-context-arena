@@ -1,1 +1,1 @@
-"""LLM Council backend package."""
+"""Curia backend package."""

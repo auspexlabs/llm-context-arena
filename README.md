@@ -4,21 +4,21 @@
 
 > **Build in public** — [`Auspex-Aerie/curia`](https://github.com/Auspex-Aerie/curia). Decisions are logged in [`docs/decision_log.md`](docs/decision_log.md).
 
-**Multi-model deliberation with code context** — a fork of Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council).
+**Multi-model deliberation with code context** — independently implemented by Auspex Labs and inspired by Andrej Karpathy's [llm-council](https://github.com/karpathy/llm-council) concept.
 
-**License:** Free to download, run, and modify for your own use. You may not ship a competing product or commercial fork — see [LICENSE](LICENSE) (PolyForm Shield 1.0.0). **Curia Pro** (hosted and enterprise features) is planned.
+**License:** [Apache License 2.0](LICENSE). Curia is open source: commercial use, modification, and redistribution are permitted under the license. Applicable attribution is preserved through [NOTICE](NOTICE), and the license does not grant rights to Auspex Labs trade or product names beyond customary attribution.
 
-All credit to [Karpathy](https://twitter.com/karpathy) for the original idea: put several frontier models in a room, let them answer independently, review each other anonymously, and have a chairman synthesize a final answer. That three-stage council is the spine of Curia — we kept it as the default mode and built an observatory around it.
+Credit to [Karpathy](https://twitter.com/karpathy) for popularizing the seed idea: put several frontier models in a room, let them answer independently, review each other anonymously, and have a chairman synthesize a final answer. That three-stage council is Curia's default mode; the implementation, additional modes, grounding system, control plane, and observatory are Curia's own.
 
 Same local-first spirit, more ways to make models argue, and machinery for grounding answers in your codebase.
 
-## What changed in this fork
+## What Curia adds
 
 | Area | Addition |
 |------|----------|
 | **Modes** | Six orchestration strategies: Council, Round Robin, Fight, Stacks, Complex Iterative, Complex Questioning |
 | **RAG** | CodeRAG pipeline: tree-sitter chunking, learned ColBERT (default), entity/graph hybrid, RRF fusion, Jina rerank, embedding query router |
-| **Context** | Per-model token budgets, chairman summarization when context is huge, manual file picker |
+| **Context** | Per-model token budgets, explicit context provenance, manual file picker |
 | **Directives** | Inline `@norag`, `@summarize`, `@tokenbudget`, `@cite`, `@lastchair`, and more |
 | **UI** | **Observatory deck** — watch-first rail/deck/inspector for council runs; take-control stream bridge; context trace, quality panel, live refresh |
 | **Agents** | MCP control plane (`curia-mcp`) — ~30 tools wrapping the HTTP API for Cursor and other MCP clients |
@@ -47,7 +47,7 @@ Open **http://localhost:5173** — rail (sessions/turns), deck (timeline + step 
 Run the backend, then start the MCP server (stdio — typical for Cursor):
 
 ```bash
-python -m backend.main          # or ./start.sh backend only
+python -m backend.main          # API only
 uv run curia-mcp                # CURIA_API_URL defaults to http://127.0.0.1:8001
 ```
 
@@ -186,7 +186,7 @@ Query ──► ALL ANSWER ──► ALL QUESTION OWN ANSWERS ──► Chairman
 
 ## What We Added (detail)
 
-Built on top of Karpathy's original council:
+Built around the council pattern:
 
 ### Local RAG System
 - **ZIP or git snapshot** per conversation — drop a `.zip` or reindex from a configured repo root
@@ -236,6 +236,7 @@ Squad presets live in `backend/squads/`:
 |-------|------|------------|
 | **normal** (default) | `normal.json` | 5 free models |
 | **freebee9** | `freebee9.json` | 9 free models |
+| **cheap_pros** | `cheap_pros.json` | 4 low-cost paid models |
 
 Swap without editing code:
 
@@ -289,7 +290,7 @@ Output allowance: 4000 tokens (`OUTPUT_TOKEN_ALLOWANCE=4000`)
 - **Frontend:** Vanilla TypeScript observatory deck, Vite 7, `marked` + DOMPurify, highlight.js
 - **Agents:** FastMCP server in `mcp_arena/` (`curia-mcp` entry point; `arena-mcp` alias deprecated)
 - **RAG:** CodeRAG (tree-sitter chunking, entity/graph hybrid, RRF fusion, embedding query router), ColBERT (default) or FAISS bi-encoder, Jina v3 cross-encoder rerank (`sentence-transformers`); LM Studio only for bi-encoder embeddings; PyTorch cu126 wheel for GPU ColBERT encode
-- **Storage:** JSON files in `data/conversations/`
+- **Storage:** canonical conversation JSON plus a rebuildable SQLite session-query projection
 
 ---
 
@@ -316,24 +317,24 @@ python -m backend.cli_context --conversation <id> --query "..." --manual-file ba
 - [docs/piv-003-curia-rebrand.md](docs/piv-003-curia-rebrand.md) — Curia rename tiers (A–C done; D–F deferred)
 - [docs/curia-handoff.md](docs/curia-handoff.md) — resume here: paths, MCP config, dogfood loop
 - [PLAN.md](PLAN.md) — Feature roadmap and mode specifications
-- [COUNCIL_OG_README.md](COUNCIL_OG_README.md) — Original Karpathy README
 
 ---
 
 ## License
 
-Source is available under the [PolyForm Shield License 1.0.0](LICENSE). In short:
+Curia is open source under the [Apache License 2.0](LICENSE). In short:
 
-- **Use** — download, run, and modify for personal, research, and internal workflows
-- **Share** — redistribute only with the same license and notices
-- **Don't compete** — you may not offer a product that substitutes for Curia or Curia Pro
+- **Use** — run, modify, distribute, and use Curia commercially
+- **Attribute** — retain the license, applicable source notices, and the attribution in [NOTICE](NOTICE) when redistributing derivatives
+- **Mark changes** — modified files must carry prominent notices that they were changed
+- **Names stay separate** — the license does not grant rights to Auspex Labs trade names, trademarks, service marks, or product names beyond reasonable attribution
 
-Commercial licensing for competing or embedded offerings: contact Auspex Labs.
+Curia is currently developed in the open. Any future separately developed commercial offering would not change the Apache-2.0 terms of versions already released under this license. See [LICENSING.md](LICENSING.md) for the source-tree and history boundary.
 
 ---
 
 ## Acknowledgments
 
-**Massive thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for [llm-council](https://github.com/karpathy/llm-council). The original 3-stage council (answer → anonymous peer review → chairman synthesis) is the spine of Curia.
+**Thanks to [Andrej Karpathy](https://twitter.com/karpathy)** for publishing [llm-council](https://github.com/karpathy/llm-council) and popularizing the three-stage council pattern (answer → anonymous peer review → chairman synthesis) that inspired Curia.
 
-Karpathy's vibe code philosophy — minimal, readable, hackable — is alive here. Contributions and feedback welcome within the license terms above.
+Contributions and feedback are welcome under the license terms above.

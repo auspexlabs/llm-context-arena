@@ -1,394 +1,315 @@
-// @ts-nocheck — ported from api.js; typed wrappers in a later pass
-/* API client — PIV-002a */
-/**
- * API client for the Curia backend.
- */
+/** Browser transport for the Curia control plane. */
 
-// Allow overriding the backend URL via Vite env; default to local dev backend.
+import type {
+  AgentTurnSnapshot,
+  Conversation,
+  ConversationSummary,
+  SessionPage,
+} from './types';
+
+type ViteImportMeta = ImportMeta & { env?: { VITE_API_BASE?: string } };
+
 export const API_BASE =
-  import.meta.env.VITE_API_BASE || 'http://localhost:8001';
+  (import.meta as ViteImportMeta).env?.VITE_API_BASE || 'http://localhost:8001';
 
-const OBSERVATORY_HEADERS = { 'X-Curia-Origin': 'observatory' };
-
-export const api = {
-  /**
-   * List all conversations.
-   */
-  async listConversations() {
-    const response = await fetch(`${API_BASE}/api/conversations`);
-    if (!response.ok) {
-      throw new Error('Failed to list conversations');
-    }
-    return response.json();
-  },
-
-  async listSessions({ limit = 50, cursor = null, filters = {}, sort = 'updated_desc' }: {
-    limit?: number;
-    cursor?: string | null;
-    filters?: Record<string, string | undefined>;
-    sort?: string;
-  } = {}) {
-    const url = new URL(`${API_BASE}/api/sessions`);
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('sort', sort);
-    if (cursor) url.searchParams.set('cursor', cursor);
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value) url.searchParams.set(key, String(value));
-    });
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      throw new Error('Failed to list sessions');
-    }
-    return response.json();
-  },
-
-  /**
-   * Create a new conversation.
-   */
-  async createConversation(mode = 'council') {
-    const response = await fetch(`${API_BASE}/api/conversations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...OBSERVATORY_HEADERS,
-      },
-      body: JSON.stringify({ mode }),
-    });
-    if (!response.ok) {
-      throw new Error('Failed to create conversation');
-    }
-    return response.json();
-  },
-
-  /**
-   * Get a specific conversation.
-   */
-  async getConversation(conversationId) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}`
-    );
-    if (!response.ok) {
-      throw new Error('Failed to get conversation');
-    }
-    return response.json();
-  },
-
-  async listTurns(conversationId) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/turns`
-    );
-    if (!response.ok) {
-      throw new Error('Failed to list turns');
-    }
-    return response.json();
-  },
-
-  /**
-   * Send a message in a conversation.
-   */
-  async sendMessage(conversationId, content, manualContext = []) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/message`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...OBSERVATORY_HEADERS,
-        },
-        body: JSON.stringify({ content, manual_context: manualContext }),
-      }
-    );
-    if (!response.ok) {
-      throw new Error('Failed to send message');
-    }
-    return response.json();
-  },
-
-  /**
-   * Send a message and receive streaming updates.
-   * @param {string} conversationId - The conversation ID
-   * @param {string} content - The message content
-   * @param {function} onEvent - Callback function for each event: (eventType, data) => void
-   * @returns {Promise<void>}
-   */
-  async sendMessageStream(conversationId, content, manualContext = [], onEvent, signal) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/message/stream`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...OBSERVATORY_HEADERS,
-        },
-        body: JSON.stringify({ content, manual_context: manualContext }),
-        signal,
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to send message');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const dispatchSseLine = (line) => {
-      if (!line.startsWith('data: ')) return;
-      const data = line.slice(6);
-      try {
-        const event = JSON.parse(data);
-        onEvent(event.type, event);
-      } catch (e) {
-        console.error('Failed to parse SSE event:', e);
-      }
-    };
-
-    const flushSseBuffer = (final = false) => {
-      const lines = buffer.split('\n');
-      if (final) {
-        buffer = '';
-        for (const raw of lines) {
-          const line = raw.replace(/\r$/, '');
-          if (line) dispatchSseLine(line);
-        }
-        return;
-      }
-      buffer = lines.pop() ?? '';
-      for (const raw of lines) {
-        const line = raw.replace(/\r$/, '');
-        if (line) dispatchSseLine(line);
-      }
-    };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        flushSseBuffer(true);
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      flushSseBuffer(false);
-    }
-  },
-
-  /**
-   * Upload and index a repository ZIP for a conversation.
-   */
-  async uploadRepo(conversationId, file) {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/upload_repo`,
-      {
-        method: 'POST',
-        body: formData,
-      }
-    );
-
-    const contentType = response.headers.get('content-type') || '';
-    let data;
-
-    // Prefer JSON payloads; fall back to text so we surface meaningful errors.
-    if (contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      throw new Error(
-        text || `Upload failed with status ${response.status}`
-      );
-    }
-
-    if (!response.ok) {
-      throw new Error(data?.message || 'Upload failed');
-    }
-
-    return data;
-  },
-
-  async getRepoTree(conversationId) {
-    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/repo_tree`);
-    if (!response.ok) {
-      throw new Error('Failed to load repo tree');
-    }
-    return response.json();
-  },
-
-  async getFile(conversationId, path) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/file?path=${encodeURIComponent(path)}`
-    );
-    if (!response.ok) {
-      throw new Error('Failed to load file');
-    }
-    return response.json();
-  },
-
-  async resolvePath(conversationId, query, userQuery = '') {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/resolve_path?q=${encodeURIComponent(query)}&user_query=${encodeURIComponent(userQuery)}`
-    );
-    if (!response.ok) {
-      throw new Error('Failed to resolve path');
-    }
-    return response.json();
-  },
-
-  async searchRepo(conversationId, query, limit = 3) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/search?q=${encodeURIComponent(query)}&limit=${limit}`
-    );
-    if (!response.ok) {
-      throw new Error('Failed to search repo');
-    }
-    return response.json();
-  },
-
-  async getIndexManifest(conversationId, repoRoot) {
-    const url = new URL(`${API_BASE}/api/index_manifest`);
-    if (conversationId) {
-      url.searchParams.set('conversation_id', conversationId);
-    }
-    if (repoRoot) {
-      url.searchParams.set('repo_root', repoRoot);
-    }
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      throw new Error('Failed to load index manifest');
-    }
-    return response.json();
-  },
-
-  async reindexSnapshot(conversationId) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/reindex`,
-      { method: 'POST' }
-    );
-    const contentType = response.headers.get('content-type') || '';
-    const data = contentType.includes('application/json') ? await response.json() : null;
-    if (!response.ok || data?.status === 'error') {
-      const msg = data?.message || `Failed to reindex snapshot (status ${response.status})`;
-      throw new Error(msg);
-    }
-    return data || {};
-  },
-
-  async reindexGit(conversationId, repoRoot) {
-    const url = new URL(`${API_BASE}/api/conversations/${conversationId}/reindex_git`);
-    if (repoRoot) {
-      url.searchParams.set('repo_root', repoRoot);
-    }
-    let response;
-    try {
-      response = await fetch(url.toString(), {
-        method: 'POST',
-      });
-    } catch (err) {
-      throw new Error(`Failed to fetch reindex (${url.toString()}): ${err.message || err}`);
-    }
-    const contentType = response.headers.get('content-type') || '';
-    const data = contentType.includes('application/json') ? await response.json() : null;
-    if (!response.ok || data?.status === 'error') {
-      const msg = data?.message || `Failed to reindex from git (status ${response.status})`;
-      throw new Error(msg);
-    }
-    return data || {};
-  },
-
-  async getSettings() {
-    const response = await fetch(`${API_BASE}/api/settings`);
-    if (!response.ok) {
-      throw new Error('Failed to load settings');
-    }
-    return response.json();
-  },
-
-  async updateSettings(payload) {
-    const response = await fetch(`${API_BASE}/api/settings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      throw new Error('Failed to update settings');
-    }
-    return response.json();
-  },
-
-  async applySquad(squadName) {
-    const response = await fetch(`${API_BASE}/api/settings/squad/${encodeURIComponent(squadName)}`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      throw new Error('Failed to apply squad preset');
-    }
-    return response.json();
-  },
-
-  async catalogEffectiveLimits(squad) {
-    const url = new URL(`${API_BASE}/api/catalog/effective-limits`);
-    if (squad) url.searchParams.set('squad', squad);
-    const response = await fetch(url.toString());
-    if (!response.ok) throw new Error('Failed to load effective limits');
-    return response.json();
-  },
-
-  async catalogPendingObservations(squad) {
-    const url = new URL(`${API_BASE}/api/catalog/observations/pending`);
-    if (squad) url.searchParams.set('squad', squad);
-    const response = await fetch(url.toString());
-    if (!response.ok) throw new Error('Failed to load pending observations');
-    return response.json();
-  },
-
-  async catalogRefresh(force = false) {
-    const url = new URL(`${API_BASE}/api/catalog/refresh`);
-    if (force) url.searchParams.set('force', 'true');
-    const response = await fetch(url.toString(), { method: 'POST' });
-    if (!response.ok) throw new Error('Catalog refresh failed');
-    return response.json();
-  },
-
-  async catalogValidate() {
-    const response = await fetch(`${API_BASE}/api/catalog/validate`);
-    if (!response.ok) throw new Error('Catalog validate failed');
-    return response.json();
-  },
-
-  async catalogMeta() {
-    const response = await fetch(`${API_BASE}/api/catalog/meta`);
-    if (!response.ok) throw new Error('Failed to load catalog meta');
-    return response.json();
-  },
-
-  async catalogUpdateModel(modelId, payload) {
-    const response = await fetch(
-      `${API_BASE}/api/catalog/models/${encodeURIComponent(modelId)}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }
-    );
-    if (!response.ok) throw new Error('Failed to update catalog model');
-    return response.json();
-  },
-
-  async catalogAcceptObservation(obsId) {
-    const response = await fetch(`${API_BASE}/api/catalog/observations/${obsId}/accept`, {
-      method: 'POST',
-    });
-    if (!response.ok) throw new Error('Failed to accept observation');
-    return response.json();
-  },
-
-  async catalogDeclineObservation(obsId) {
-    const response = await fetch(`${API_BASE}/api/catalog/observations/${obsId}/decline`, {
-      method: 'POST',
-    });
-    if (!response.ok) throw new Error('Failed to decline observation');
-    return response.json();
-  },
+type JsonRecord = Record<string, unknown>;
+type ManualContext = JsonRecord[];
+type StreamEvent = {
+  type: string;
+  data?: unknown;
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
 };
+type StreamHandler = (eventType: string, event: StreamEvent) => void;
+
+interface RuntimeSettings extends JsonRecord {
+  theme?: 'light' | 'dark';
+  arena_squad?: string;
+  available_squads?: Array<{ name: string; label: string }>;
+}
+
+export interface SessionQuery {
+  limit?: number;
+  cursor?: string | null;
+  filters?: Record<string, string | undefined>;
+  sort?: string;
+}
+
+const JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Curia-Origin': 'observatory',
+};
+
+function endpoint(path: string, params: Record<string, unknown> = {}): URL {
+  const url = new URL(path, `${API_BASE}/`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  return url;
+}
+
+async function responseError(response: Response, fallback: string): Promise<Error> {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const payload = await response.json().catch(() => null) as JsonRecord | null;
+    const message = payload?.message ?? payload?.detail;
+    if (message) return new Error(String(message));
+  }
+  const text = await response.text().catch(() => '');
+  return new Error(text || `${fallback} (HTTP ${response.status})`);
+}
+
+async function jsonRequest<T = JsonRecord>(
+  path: string | URL,
+  init: RequestInit = {},
+  failure = 'Curia request failed',
+): Promise<T> {
+  const response = await fetch(path, init);
+  if (!response.ok) throw await responseError(response, failure);
+  return response.json() as Promise<T>;
+}
+
+function conversationPath(conversationId: string, suffix = ''): string {
+  const id = encodeURIComponent(conversationId);
+  return `/api/conversations/${id}${suffix}`;
+}
+
+function emitSseBlock(block: string, onEvent: StreamHandler): void {
+  const data = block
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart())
+    .join('\n');
+  if (!data) return;
+  try {
+    const event = JSON.parse(data) as StreamEvent;
+    onEvent(event.type, event);
+  } catch (error) {
+    console.error('Curia returned an invalid SSE payload', error);
+  }
+}
+
+async function consumeEventStream(response: Response, onEvent: StreamHandler): Promise<void> {
+  if (!response.body) throw new Error('Curia stream opened without a response body');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    pending += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n');
+    const blocks = pending.split('\n\n');
+    pending = done ? '' : blocks.pop() || '';
+    for (const block of blocks) emitSseBlock(block, onEvent);
+    if (done) {
+      if (pending.trim()) emitSseBlock(pending, onEvent);
+      return;
+    }
+  }
+}
+
+class CuriaApiClient {
+  listConversations(): Promise<ConversationSummary[]> {
+    return jsonRequest(endpoint('/api/conversations'), {}, 'Unable to list conversations');
+  }
+
+  listSessions({
+    limit = 50,
+    cursor = null,
+    filters = {},
+    sort = 'updated_desc',
+  }: SessionQuery = {}): Promise<SessionPage> {
+    return jsonRequest(
+      endpoint('/api/sessions', { limit, cursor, sort, ...filters }),
+      {},
+      'Unable to list sessions',
+    );
+  }
+
+  createConversation(mode = 'council'): Promise<Conversation> {
+    return jsonRequest(
+      endpoint('/api/conversations'),
+      { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ mode }) },
+      'Unable to create a conversation',
+    );
+  }
+
+  getConversation(conversationId: string): Promise<Conversation> {
+    return jsonRequest(
+      endpoint(conversationPath(conversationId)),
+      {},
+      'Unable to load the conversation',
+    );
+  }
+
+  listTurns(conversationId: string): Promise<{ turns: AgentTurnSnapshot[] }> {
+    return jsonRequest(
+      endpoint(conversationPath(conversationId, '/turns')),
+      {},
+      'Unable to list turns',
+    );
+  }
+
+  sendMessage(
+    conversationId: string,
+    content: string,
+    manualContext: ManualContext = [],
+  ): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint(conversationPath(conversationId, '/message')),
+      {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ content, manual_context: manualContext }),
+      },
+      'Unable to start the deliberation',
+    );
+  }
+
+  async sendMessageStream(
+    conversationId: string,
+    content: string,
+    manualContext: ManualContext = [],
+    onEvent: StreamHandler,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await fetch(endpoint(conversationPath(conversationId, '/message/stream')), {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ content, manual_context: manualContext }),
+      signal,
+    });
+    if (!response.ok) throw await responseError(response, 'Unable to stream the deliberation');
+    await consumeEventStream(response, onEvent);
+  }
+
+  async uploadRepo(conversationId: string, file: File): Promise<JsonRecord> {
+    const form = new FormData();
+    form.append('file', file);
+    return jsonRequest(
+      endpoint(conversationPath(conversationId, '/upload_repo')),
+      { method: 'POST', body: form },
+      'Repository upload failed',
+    );
+  }
+
+  getRepoTree(conversationId: string): Promise<JsonRecord[]> {
+    return jsonRequest(endpoint(conversationPath(conversationId, '/repo_tree')));
+  }
+
+  getFile(conversationId: string, path: string): Promise<JsonRecord> {
+    return jsonRequest(endpoint(conversationPath(conversationId, '/file'), { path }));
+  }
+
+  resolvePath(conversationId: string, query: string, userQuery = ''): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint(conversationPath(conversationId, '/resolve_path'), {
+        q: query,
+        user_query: userQuery,
+      }),
+    );
+  }
+
+  searchRepo(conversationId: string, query: string, limit = 3): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint(conversationPath(conversationId, '/search'), { q: query, limit }),
+    );
+  }
+
+  getIndexManifest(conversationId?: string, repoRoot?: string): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint('/api/index_manifest', {
+        conversation_id: conversationId,
+        repo_root: repoRoot,
+      }),
+    );
+  }
+
+  reindexSnapshot(conversationId: string): Promise<JsonRecord> {
+    return this.reindex(endpoint(conversationPath(conversationId, '/reindex')));
+  }
+
+  reindexGit(conversationId: string, repoRoot?: string): Promise<JsonRecord> {
+    return this.reindex(
+      endpoint(conversationPath(conversationId, '/reindex_git'), { repo_root: repoRoot }),
+    );
+  }
+
+  private async reindex(url: URL): Promise<JsonRecord> {
+    const payload = await jsonRequest<JsonRecord>(
+      url,
+      { method: 'POST' },
+      'Repository indexing failed',
+    );
+    if (payload.status === 'error') throw new Error(String(payload.message || 'Indexing failed'));
+    return payload;
+  }
+
+  getSettings(): Promise<RuntimeSettings> {
+    return jsonRequest(endpoint('/api/settings'), {}, 'Unable to load settings');
+  }
+
+  updateSettings(payload: JsonRecord): Promise<RuntimeSettings> {
+    return jsonRequest(
+      endpoint('/api/settings'),
+      { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(payload) },
+      'Unable to update settings',
+    );
+  }
+
+  applySquad(squadName: string): Promise<RuntimeSettings> {
+    return jsonRequest(
+      endpoint(`/api/settings/squad/${encodeURIComponent(squadName)}`),
+      { method: 'POST' },
+      'Unable to apply the squad',
+    );
+  }
+
+  catalogEffectiveLimits(squad?: string): Promise<JsonRecord> {
+    return jsonRequest(endpoint('/api/catalog/effective-limits', { squad }));
+  }
+
+  catalogPendingObservations(squad?: string): Promise<JsonRecord> {
+    return jsonRequest(endpoint('/api/catalog/observations/pending', { squad }));
+  }
+
+  catalogRefresh(force = false): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint('/api/catalog/refresh', { force: force || undefined }),
+      { method: 'POST' },
+    );
+  }
+
+  catalogValidate(): Promise<JsonRecord> {
+    return jsonRequest(endpoint('/api/catalog/validate'));
+  }
+
+  catalogMeta(): Promise<JsonRecord> {
+    return jsonRequest(endpoint('/api/catalog/meta'));
+  }
+
+  catalogUpdateModel(modelId: string, payload: JsonRecord): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint(`/api/catalog/models/${encodeURIComponent(modelId)}`),
+      { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(payload) },
+    );
+  }
+
+  catalogAcceptObservation(observationId: string | number): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint(`/api/catalog/observations/${encodeURIComponent(observationId)}/accept`),
+      { method: 'POST' },
+    );
+  }
+
+  catalogDeclineObservation(observationId: string | number): Promise<JsonRecord> {
+    return jsonRequest(
+      endpoint(`/api/catalog/observations/${encodeURIComponent(observationId)}/decline`),
+      { method: 'POST' },
+    );
+  }
+}
+
+export const api = new CuriaApiClient();
