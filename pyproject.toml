@@ -3,9 +3,15 @@ name = "curia"
 version = "0.1.0"
 description = "Curia — multi-model deliberation with code RAG"
 readme = "README.md"
-license = { text = "PolyForm Shield License 1.0.0" }
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Auspex Labs" }]
 requires-python = ">=3.10"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -45,6 +51,11 @@ torch = { index = "pytorch-cu126" }
 [project.scripts]
 curia-mcp = "mcp_arena.server:main"
 arena-mcp = "mcp_arena.server:main"  # deprecated alias — remove after DEF-011 grace period
+
+[project.urls]
+Homepage = "https://github.com/Auspex-Aerie/curia"
+Repository = "https://github.com/Auspex-Aerie/curia"
+Issues = "https://github.com/Auspex-Aerie/curia/issues"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,11 +1,13 @@
 {
-  "name": "curia",
+  "name": "curia-observatory",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.0.0",
+  "description": "Watch-first interface for Curia deliberations",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
     "build": "tsc && vite build",
+    "dev": "vite",
     "preview": "vite preview"
   },
   "dependencies": {

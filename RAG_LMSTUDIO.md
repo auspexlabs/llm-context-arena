@@ -1,6 +1,6 @@
-# RAG + LM Studio additions
+# Curia code grounding and optional LM Studio setup
 
-This fork of Andrej Karpathy's **llm-council** adds local RAG and repo ZIP upload, now rebranded as **LLM Context Arena**. The upstream project is awesome; this document only covers the incremental pieces added here.
+Curia can index a repository snapshot and retrieve relevant code for a deliberation. The default late-interaction retrieval stack runs in-process; LM Studio is needed only for the optional bi-encoder path. This document covers that grounding subsystem and its operational controls.
 
 ## What was added
 - **Repo ZIP upload per conversation** (`POST /api/conversations/{id}/upload_repo`): unzips into `temp_repos/{id}`, AST-chunks content, and builds per-conversation indexes under `data/conversations/{id}_*`.
@@ -99,4 +99,4 @@ ColBERT (default) and Jina/BGE rerank run locally via `pylate` and `sentence-tra
 - ColBERT GPU encode needs NVIDIA driver + CUDA; falls back to CPU automatically when unavailable.
 
 ## Attribution
-Base project by **Andrej Karpathy** (llm-council). This document and the RAG/LM Studio additions describe the fork-specific features, now under the **LLM Context Arena** branding.
+Curia's implementation is maintained by Auspex Labs. See [LICENSING.md](LICENSING.md) for the source-tree boundary and conceptual acknowledgements.

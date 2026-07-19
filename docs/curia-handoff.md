@@ -60,7 +60,7 @@ ln -sf /home/phaze/PycharmProjects/curia /home/phaze/PycharmProjects/llm-council
 | **Product** | **Curia** — multi-model deliberation + code RAG |
 | **GitHub** | [github.com/Auspex-Aerie/curia](https://github.com/Auspex-Aerie/curia) |
 | **Local path** | `/home/phaze/PycharmProjects/curia` (renamed from `llm-council-rag` in place) |
-| **License** | PolyForm Shield 1.0.0 — free to use; no competing commercial fork; **Curia Pro** reserved |
+| **License** | Apache-2.0 — open source; retain applicable license and `NOTICE` attribution; product-name rights are not granted beyond customary attribution |
 | **Ledger** | [`docs/decision_log.md`](decision_log.md) |
 
 ---
@@ -77,7 +77,7 @@ ln -sf /home/phaze/PycharmProjects/curia /home/phaze/PycharmProjects/llm-council
 ### PR #12 — OSS + Curia rebrand (merged `344a506`)
 
 - Org: `auspexlabs/llm-context-arena` → **`Auspex-Aerie/curia`**
-- PolyForm Shield `LICENSE`, README refresh, GitHub Actions CI
+- Initial PolyForm Shield license (later superseded by Apache-2.0 in `DEC-029`), README refresh, GitHub Actions CI
 - Rebrand tiers A–C: `curia` package, `curia-mcp`, `CURIA_*` env (`ARENA_*` aliases)
 - CI: `uv sync --extra dev`, `pytest tests/unit -m "not eval"`, frontend build
 - Ledger: **PIV-003**, **DEC-020**, **DEF-011** ([`piv-003-curia-rebrand.md`](piv-003-curia-rebrand.md))
