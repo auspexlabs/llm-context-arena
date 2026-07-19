@@ -38,6 +38,7 @@ git merge --ff-only origin/main
 - `cd frontend && npm run build` — **passed**
 - `git diff --check` — **passed**
 - README stale-term scan — **clean** for Bicameral Mind, speculative commercial-offering language, phantom `@file:` support, unwired directives, and removed UI controls
+- Greptile first pass — one P1 corrected by making mode-agnostic `send_message` the documented full-turn path and identifying `run_council_turn` as a Council-only convenience wrapper
 
 The focused test run emits existing Pydantic v2 class-config and `langchain-community` deprecation warnings; no test failed.
 
@@ -98,7 +99,7 @@ Earlier foundations remain in PR #11 (Observatory cutover) and PR #12 (Curia reb
 | **Inspector** | Participants, mode-aware deliberation pulse, and cost series/breakdowns |
 | **Execution** | Canonical trace is the source of topology, step counts, runtime, failures, usage, and cost |
 | **Prompt provenance** | Separate typed contract for Curia-owned instructions and artifact handoffs; RAG content stays in the RAG view |
-| **MCP** | Full-turn tools for every mode; stepwise `create_turn` / `advance_turn` remains Council-specific |
+| **MCP** | `send_message` runs a full turn in every mode; `run_council_turn` and stepwise `create_turn` / `advance_turn` are Council-specific |
 | **Quality gate** | Check `execution_quality.acceptable`; HTTP 200 alone is not evidence of a valid deliberation |
 | **Configuration** | Squad JSON plus frozen `data/model_catalog.yaml` and `data/arena_config.yaml` |
 

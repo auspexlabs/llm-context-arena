@@ -178,11 +178,11 @@ A typical full-turn flow is:
 get_index_manifest
   → reindex when needed
   → create_conversation
-  → run_council_turn
+  → send_message
   → inspect execution_quality, trace, failures, and cost
 ```
 
-The lower-level `create_turn` / `advance_turn` lifecycle is Council-specific. Always check `execution_quality.acceptable` before treating the chairman response as a successful run; a transport-level success does not guarantee that every required model stage succeeded.
+`send_message` is the mode-agnostic full-turn tool. For Council only, `run_council_turn` is a convenience wrapper around the lower-level `create_turn` / `advance_turn` lifecycle. Always check `execution_quality.acceptable` before treating the chairman response as a successful run; a transport-level success does not guarantee that every required model stage succeeded.
 
 See [Agent Control Plane Architecture](docs/agent-control-plane-architecture.md) for the tool map and response contracts.
 
