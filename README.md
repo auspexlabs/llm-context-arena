@@ -36,6 +36,41 @@ Curia currently has no application-level authentication. Keep the API and Observ
 
 The default learned ColBERT path does not require LM Studio. LM Studio is needed only when `SEMANTIC_BACKEND=biencoder`; see [RAG_LMSTUDIO.md](RAG_LMSTUDIO.md).
 
+### Alternative: pip + requirements.txt
+
+If you prefer pip over uv, install `torch` for your platform **first** (its wheels are platform- and CUDA-specific), then the rest from [`requirements.txt`](requirements.txt):
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+
+# 1. torch for your platform (pick one):
+pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126  # NVIDIA CUDA 12.x
+pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu    # CPU-only (Linux/Windows)
+pip install torch==2.11.0                                                     # macOS (Apple Silicon / MPS)
+# ...or use the selector at https://pytorch.org/get-started/locally/
+
+# 2. Everything else (torch is already satisfied):
+pip install -r requirements.txt
+cd frontend && npm install && cd ..
+cp .env.example .env   # set OPENROUTER_API_KEY
+```
+
+The server runs under **uvicorn**. `./start.sh` launches it (and the Observatory) via `uv`; under a pip venv, run them directly:
+
+```bash
+uvicorn backend.main:app --host 127.0.0.1 --port 8001   # backend (this is how start.sh runs it too)
+cd frontend && npm run dev                              # Observatory (separate shell)
+```
+
+`uv sync` remains the recommended, fully-locked path; `pyproject.toml` + `uv.lock` stay the source of truth.
+
+### First run
+
+Regardless of install path, two steps happen the first time you use code grounding — the API and Observatory start fine without them, but grounded deliberation does not work until they complete:
+
+- **Model downloads (automatic, on first grounded query).** The default retrieval path lazily downloads its models from HuggingFace — the PyLate ColBERT model (`colbert-ir/colbertv2.0`), the `jinaai/jina-reranker-v3` cross-encoder (loaded with `trust_remote_code`), and a sentence-transformers backbone. This is several GB and needs internet, so the first grounded query is slow. The device is auto-detected (`COLBERT_DEVICE=auto`) and falls back to CPU when CUDA is unavailable.
+- **Repository indexing.** Grounding is empty until you point Curia at a repository and index it: set its `repo_root` (Observatory settings, persisted to `data/config.json`) and trigger indexing from the Observatory, or over MCP (`get_index_manifest` → `reindex`). Indexing builds a per-conversation snapshot from the configured Git working tree or an uploaded ZIP.
+
 ## The Observatory
 
 The Observatory separates active deliberation from session history:
