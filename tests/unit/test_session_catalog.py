@@ -67,6 +67,37 @@ def test_catalog_projects_useful_session_metadata(tmp_path):
     assert session["repository"] == "/srv/curia"
 
 
+def test_projection_tolerates_null_execution_quality(tmp_path):
+    # Regression: a historical assistant message may carry an explicit
+    # metadata.execution_quality of null (key present, value None). The
+    # projector must coalesce that to "unknown" rather than crashing the whole
+    # catalog reconciliation (which previously 500'd every storage endpoint).
+    storage = _storage(tmp_path)
+    conversation = storage.create_conversation("conv-null-quality", mode="council")
+    conversation["messages"] = [
+        {"role": "user", "content": "question"},
+        {
+            "role": "assistant",
+            "stage1": [],
+            "stage2": [],
+            "stage3": {"model": "google/gemini-2.5-pro", "response": "answer"},
+            "context_sources": [],
+            "metadata": {
+                "arena_models": ["vendor/a", "vendor/b"],
+                "chairman_model": "google/gemini-2.5-pro",
+                "execution_quality": None,
+            },
+        },
+    ]
+    storage.save_conversation(conversation)
+
+    [session] = storage.list_sessions(SessionQuery())["items"]
+    assert session["id"] == "conv-null-quality"
+    assert session["latest_quality"] == "unknown"
+    # unknown quality on a completed assistant turn resolves to lifecycle "complete".
+    assert session["status"] == "complete"
+
+
 def test_interrupted_projection_commit_is_repaired_on_restart(tmp_path, monkeypatch):
     storage = _storage(tmp_path)
     storage.create_conversation("conv-1")
