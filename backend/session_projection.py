@@ -76,7 +76,7 @@ class SessionProjector:
         costs = summarize_conversation_cost(messages)
 
         qualities = [
-            str((message.get("metadata") or {}).get("execution_quality", {}).get("severity") or "unknown")
+            str(((message.get("metadata") or {}).get("execution_quality") or {}).get("severity") or "unknown")
             for message in assistants
         ]
         latest_quality = qualities[-1] if qualities else "unknown"
